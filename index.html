@@ -407,7 +407,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
 "use strict";
 /* ============ Grundlagen ============ */
 const KEY = 'stempeluhr.v2';
-const APP_VERSION = '3.0 · 04.11.2026';
+const APP_VERSION = '3.1 · 04.11.2026';
 const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -1081,10 +1081,11 @@ function viewAntraege(){
 }
 function requestEditor(pre={}){
   const t = todayKey();
-  let type = pre.type && pre.type !== 'hu' ? pre.type : 'u';
+  let type = pre.type || 'u';
+  const isVac = t => t === 'u' || t === 'hu';
   const sel = {}; if (pre.from && isWorkday(pre.from) && !ABSMAP[pre.from]) sel[pre.from] = 1;
   const start = fromKey(pre.from || t); let cy = start.getFullYear(), cm = start.getMonth();
-  const TYPES = ['u','k','gt','dr','su'];
+  const TYPES = ['u','hu','k','gt','dr','su'];
   sheet(`<h3>Abwesenheit eintragen</h3>
     <div class="chips" id="rqType">${TYPES.map(k=>`<button data-t="${k}" class="chip ${k===type?'on':''}"><i style="background:var(--c-${k})"></i>${ABS[k].label}</button>`).join('')}</div>
     <div class="small muted" id="rqDesc" style="margin:8px 2px 0"></div>
@@ -1095,7 +1096,7 @@ function requestEditor(pre={}){
     <div class="actions"><button class="btn grow" data-x>Abbrechen</button><button class="btn grow primary" id="rqSend">Eintragen</button></div>`,
   (el, close) => {
     const draw = () => {
-      $('#rqDesc', el).textContent = type === 'u' ? 'Tage antippen: einmal = ganzer Tag, zweimal = halber Tag, dreimal = abwählen.' : `${ABS[type].desc}. Tage antippen zum Auswählen, nochmal zum Abwählen.`;
+      $('#rqDesc', el).textContent = type === 'u' ? 'Ganze Urlaubstage: Tage antippen zum Auswählen, nochmal zum Abwählen.' : type === 'hu' ? 'Halbe Urlaubstage: Tage antippen zum Auswählen, nochmal zum Abwählen.' : `${ABS[type].desc}. Tage antippen zum Auswählen, nochmal zum Abwählen.`;
       $('#rqMon', el).textContent = `${MON[cm]} ${cy}`;
       const days = new Date(cy, cm+1, 0).getDate(); const off = (new Date(cy, cm, 1).getDay()+6)%7;
       let h = ['Mo','Di','Mi','Do','Fr','Sa','So'].map(x=>`<div class="h">${x}</div>`).join('');
@@ -1103,36 +1104,37 @@ function requestEditor(pre={}){
       for (let i = 1; i <= days; i++){
         const k = `${cy}-${pad(cm+1)}-${pad(i)}`; const a = ABSMAP[k]; const hol = holidayOf(k); const we = sollBase(k)===0; const sv = sel[k];
         const cls = ['c', we?'we':'', hol?'hol':'', a?'a-'+a.type:'', a&&a.pending?'pending':'', k===t?'today':'', sv ? (sv===.5?'sel-half':'sel') : ''].join(' ');
-        const lab = a ? ABS[a.type].cell : hol ? `Feier­tag` : sv ? (sv===.5 ? '½ Urlaub' : ABS[type].cell) : '';
-        h += `<div class="${cls}" data-k="${k}" ${sv && sv!==.5 ? `style="background:var(--c-${type})"` : ''}><span class="num">${i}</span>${lab?`<span class="code">${lab}</span>`:''}</div>`;
+        const ft = isVac(type) ? 'u' : type;
+        const lab = a ? ABS[a.type].cell : hol ? `Feier­tag` : sv ? (sv===.5 ? '½ Urlaub' : ABS[ft].cell) : '';
+        h += `<div class="${cls}" data-k="${k}" ${sv && sv!==.5 ? `style="background:var(--c-${ft})"` : ''}><span class="num">${i}</span>${lab?`<span class="code">${lab}</span>`:''}</div>`;
       }
       $('#rqCal', el).innerHTML = h;
       $$('#rqCal [data-k]', el).forEach(c => c.onclick = () => {
         const k = c.dataset.k;
         if (ABSMAP[k]){ toast(`Schon eingetragen: ${ABS[ABSMAP[k].type].label}`); return; }
         if (!isWorkday(k)){ toast(holidayOf(k) || 'Kein Arbeitstag'); return; }
-        const cur = sel[k];
-        if (!cur) sel[k] = 1; else if (cur === 1 && type === 'u') sel[k] = .5; else delete sel[k];
+        const want = type === 'hu' ? .5 : 1;
+        if (sel[k] === want) delete sel[k]; else sel[k] = want;
         draw();
       });
       const rs = vacRanges(sel); const total = rs.reduce((a,r)=>a+r.days,0);
       $('#rqSum', el).innerHTML = rs.length
-        ? `<div class="between small"><span class="muted">${ABS[type].label}</span><b class="num">${fmtDays(total)} ${total===1?'Arbeitstag':'Arbeitstage'}</b></div>
+        ? `<div class="between small"><span class="muted">${isVac(type) ? 'Urlaub' : ABS[type].label}</span><b class="num">${fmtDays(total)} ${total===1?'Arbeitstag':'Arbeitstage'}</b></div>
            <div class="small" style="margin-top:4px">${rs.map(r=>esc(rangeText(r))).join('<br>')}</div>
            ${ABS[type].vac ? `<div class="between small" style="margin-top:6px"><span class="muted">Resturlaub danach</span><b class="num">${fmtDays(vacation().rest - total)} Tage</b></div>` : ''}`
         : '<div class="small muted">Noch keine Tage ausgewählt.</div>';
-      $('#rqSend', el).textContent = type === 'u' ? 'Weiter zum Urlaubsantrag' : 'Eintragen';
+      $('#rqSend', el).textContent = isVac(type) ? 'Weiter zum Urlaubsantrag' : 'Eintragen';
     };
     $$('#rqType button', el).forEach(b => b.onclick = () => {
       type = b.dataset.t; $$('#rqType button', el).forEach(x=>x.classList.toggle('on', x===b));
-      if (type !== 'u') for (const k in sel) if (sel[k] === .5) sel[k] = 1;
+      if (!isVac(type)) for (const k in sel) if (sel[k] === .5) sel[k] = 1;
       draw();
     });
     $$('[data-rm]', el).forEach(b => b.onclick = () => { cm += +b.dataset.rm; if (cm<0){cm=11;cy--;} if (cm>11){cm=0;cy++;} draw(); });
     $('[data-x]', el).onclick = close;
     $('#rqSend', el).onclick = () => {
       const rs = vacRanges(sel); if (!rs.length){ toast('Bitte mindestens einen Tag im Kalender antippen'); return; }
-      if (type === 'u'){ VSEL = {...sel}; close(); setTimeout(vacationMail, 240); return; }
+      if (isVac(type)){ VSEL = {...sel}; close(); setTimeout(vacationMail, 240); return; }
       const note = $('#rqNote', el).value.trim(); const st = S.settings.approval==='auto' ? 'genehmigt' : 'beantragt';
       for (const r of rs){ const q = {id:uid(), kind:'abs', type, from:r.from, to:r.to, note, status:st, created:Date.now()}; if (st==='genehmigt') q.decided = Date.now(); S.requests.unshift(q); }
       log(`${ABS[type].label} eingetragen: ${rs.map(r=>r.from===r.to?shortDate(r.from):shortDate(r.from)+'–'+shortDate(r.to)).join(', ')}`);
