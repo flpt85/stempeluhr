@@ -212,6 +212,11 @@ svg.ti{width:12px;height:12px;vertical-align:-1px;margin-right:3px}
 .cal .c.a-dr{background:var(--c-dr);color:#fff}.cal .c.a-su{background:var(--c-su);color:#fff}
 .cal .c.hol{background:transparent;border:1px dashed var(--c-hol);color:var(--muted)}
 .cal .c.pending{opacity:.55}
+.cal .c.sel{background:var(--c-u);color:#fff;box-shadow:inset 0 0 0 2px rgba(255,255,255,.55)}
+.cal .c.sel-half{background:linear-gradient(135deg,var(--c-u) 50%,var(--surface-2) 50%);box-shadow:inset 0 0 0 2px var(--c-u)}
+.cal .c.sel .code,.cal .c.sel-half .code{color:inherit}
+.selbar{margin-top:12px;border:1px solid color-mix(in srgb,var(--c-u) 45%,transparent);background:color-mix(in srgb,var(--c-u) 10%,var(--surface))}
+.mail-prev{white-space:pre-wrap;font-size:14px;line-height:1.55;min-height:300px;resize:vertical}
 .cal .c.pending::after{content:"";position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
 .legend{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:12px;font-size:12px;color:var(--muted)}
 .legend span{display:inline-flex;align-items:center;gap:6px}
@@ -321,6 +326,9 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
   #print .tot td{font-weight:bold;border-top:.5mm solid #000}
   #print .sign{display:flex;gap:20mm;margin-top:18mm}
   #print .sign div{flex:1;border-top:.3mm solid #000;padding-top:1.5mm;font-size:9pt}
+  #print .box{border:.3mm solid #000;padding:4mm;margin-top:8mm}
+  #print .box h2{font-size:11pt;margin:0 0 3mm}
+  #print .chk{display:inline-block;width:3.5mm;height:3.5mm;border:.3mm solid #000;margin:0 2mm 0 6mm;vertical-align:-.5mm}
   @page{size:A4;margin:14mm}
 }
 </style>
@@ -383,7 +391,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
 "use strict";
 /* ============ Grundlagen ============ */
 const KEY = 'stempeluhr.v2';
-const APP_VERSION = '2.4 · 04.11.2026';
+const APP_VERSION = '2.5 · 04.11.2026';
 const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -1013,8 +1021,9 @@ function viewAntraege(){
   for (let i = 0; i < off; i++) cells += '<div class="c empty"></div>';
   for (let i = 1; i <= days; i++){
     const k = `${y}-${pad(m+1)}-${pad(i)}`; const a = ABSMAP[k]; const hol = holidayOf(k); const we = sollBase(k)===0;
-    const cls = ['c', we?'we':'', hol?'hol':'', a?'a-'+a.type:'', a&&a.pending?'pending':'', k===t?'today':''].join(' ');
-    cells += `<div class="${cls}" data-cal="${k}" title="${esc(hol||'')}"><span class="num">${i}</span>${a?`<span class="code">${ABS[a.type].code}</span>`:hol?'<span class="code">FT</span>':''}</div>`;
+    const sv = VSEL[k];
+    const cls = ['c', we?'we':'', hol?'hol':'', a?'a-'+a.type:'', a&&a.pending?'pending':'', k===t?'today':'', sv===1?'sel':sv===.5?'sel-half':''].join(' ');
+    cells += `<div class="${cls}" data-cal="${k}" title="${esc(hol||'')}"><span class="num">${i}</span>${a?`<span class="code">${ABS[a.type].code}</span>`:hol?'<span class="code">FT</span>':sv?`<span class="code">${sv===1?'U':'½U'}</span>`:''}</div>`;
   }
   const reqs = S.requests.slice().sort((a,b)=>b.created-a.created);
   const list = reqs.length ? reqs.map(r => {
@@ -1029,10 +1038,12 @@ function viewAntraege(){
   return `
   <div class="month-nav"><button class="icon-btn" data-cm="-1">${svg('i-chev-l')}</button><h3>${MON[m]} ${y}</h3><button class="icon-btn" data-cm="1">${svg('i-chev-r')}</button></div>
   <div class="card">
+    <div class="small muted" style="margin-bottom:4px">${svg('i-info','i ti')}Urlaub wählen: Tag antippen = ganzer Tag, nochmal = halber Tag, dritter Tipp = abwählen.</div>
     <div class="cal">${['Mo','Di','Mi','Do','Fr','Sa','So'].map(h=>`<div class="h">${h}</div>`).join('')}${cells}</div>
     <div class="legend">${Object.keys(ABS).map(t=>`<span><i style="background:var(--c-${t})"></i>${ABS[t].label}</span>`).join('')}<span><i style="border:1px dashed var(--c-hol)"></i>Feiertag</span><span><i style="background:var(--warn);border-radius:50%"></i>beantragt</span></div>
   </div>
-  <button class="btn primary block" id="newReq" style="margin-top:12px;padding:14px">${svg('i-plus')} Fehlzeit beantragen</button>
+  ${selBar()}
+  <button class="btn ${Object.keys(VSEL).length?'':'primary'} block" id="newReq" style="margin-top:12px;padding:14px">${svg('i-plus')} Andere Fehlzeit eintragen</button>
   <h2 class="section">Anträge & Workflow</h2>
   <div class="card">${list}</div>
   ${S.settings.approval==='manual'?'<p class="tiny muted" style="margin:10px 4px">Demo-Workflow: Die Genehmigung durch den Vorgesetzten wird hier simuliert. Im Firmensystem landet der Antrag beim Vorgesetzten bzw. bei HR.</p>':''}`;
@@ -1069,6 +1080,140 @@ function requestEditor(pre={}){
       if (r.status==='genehmigt') r.decided = Date.now();
       S.requests.unshift(r); log(`Antrag ${ABS[type].label} ${shortDate(from)}–${shortDate(to)} gestellt`);
       save(); close(); TAB='antraege'; render(); toast(r.status==='genehmigt'?'Antrag eingetragen ✓':'Antrag gestellt – wartet auf Genehmigung');
+    };
+  });
+}
+/* ============ Urlaubsantrag per E-Mail ============ */
+let VSEL = {};
+const WDLONG = k => { const d = fromKey(k); return `${WDL[d.getDay()]}, ${shortDate(k)}`; };
+function vacRanges(sel = VSEL){
+  const keys = Object.keys(sel).sort(); const out = [];
+  const onlyFreeBetween = (a, b) => { for (let k = addDays(a,1); k < b; k = addDays(k,1)) if (isWorkday(k)) return false; return true; };
+  for (const k of keys){
+    const half = sel[k] === .5; const last = out[out.length-1];
+    if (last && !half && !last.half && onlyFreeBetween(last.to, k)){ last.to = k; last.days += 1; }
+    else out.push({from:k, to:k, half, days: sel[k]});
+  }
+  return out;
+}
+const fmtTage = n => `${fmtDays(n)} ${n===1?'Arbeitstag':'Arbeitstage'}`;
+function rangeText(r){
+  if (r.half) return `${WDLONG(r.from)} (halber Tag)`;
+  if (r.from === r.to) return `${WDLONG(r.from)} (1 Arbeitstag)`;
+  return `${WDLONG(r.from)} bis ${WDLONG(r.to)} (${fmtTage(r.days)})`;
+}
+function selBar(){
+  const rs = vacRanges(); if (!rs.length) return '';
+  const total = rs.reduce((a,r)=>a+r.days,0);
+  return `<div class="card selbar"><div class="stat-label">Urlaub ausgewählt</div>
+    <div style="font-size:20px;font-weight:700;margin:2px 0 6px">${fmtDays(total)} ${total===1?'Urlaubstag':'Urlaubstage'}</div>
+    <div class="small muted">${rs.map(r => esc(r.from===r.to ? shortDate(r.from) + (r.half?' (½)':'') : shortDate(r.from)+' – '+shortDate(r.to))).join(' · ')}</div>
+    <div class="actions"><button class="btn grow" id="selClear">${svg('i-x')} Auswahl aufheben</button><button class="btn grow primary" id="selMail">${svg('i-check')} Urlaubsantrag erstellen</button></div></div>`;
+}
+function vacMailSubject(rs){
+  const total = rs.reduce((a,r)=>a+r.days,0); const n = (S.settings.fullName||'').trim();
+  const span = rs.length === 1 ? (rs[0].from===rs[0].to ? shortDate(rs[0].from) : `${shortDate(rs[0].from)} – ${shortDate(rs[0].to)}`) : `${fmtDays(total)} Urlaubstage`;
+  return `Urlaubsantrag${n ? ' ' + n : ''}: ${span}`;
+}
+function vacMailBody(rs, o){
+  const s = S.settings; const total = rs.reduce((a,r)=>a+r.days,0);
+  const anrede = (s.mailSalutation||'').trim() || 'Sehr geehrte Damen und Herren';
+  const name = (s.fullName||'').trim() || (s.name||'');
+  const year = rs[0].from.slice(0,4);
+  const L = [];
+  L.push(`${anrede},`, '');
+  L.push('ich hoffe, es geht Ihnen gut.', '');
+  if (rs.length === 1 && rs[0].days === total){
+    L.push(`hiermit möchte ich Sie höflich um die Genehmigung meines Erholungsurlaubs für den folgenden Zeitraum bitten:`, '');
+  } else {
+    L.push(`hiermit möchte ich Sie höflich um die Genehmigung meines Erholungsurlaubs für die folgenden Tage bitten:`, '');
+  }
+  for (const r of rs) L.push(`• ${rangeText(r)}`);
+  L.push('');
+  let sum = `Das entspricht insgesamt ${fmtDays(total)} ${total===1?'Urlaubstag':'Urlaubstagen'}.`;
+  if (o.rest){ const v = vacation(+year); sum += ` Nach meinen Aufzeichnungen verbleiben mir danach noch ${fmtDays(v.rest - total)} von ${fmtDays(v.claim)} Urlaubstagen für das Jahr ${year}.`; }
+  L.push(sum, '');
+  L.push('Selbstverständlich werde ich vor meiner Abwesenheit alle laufenden Aufgaben sorgfältig abschließen bzw. ordnungsgemäß übergeben, damit während meines Urlaubs ein reibungsloser Ablauf gewährleistet ist.' + (o.vertretung ? ` Meine Vertretung übernimmt in dieser Zeit freundlicherweise ${o.vertretung}.` : ''), '');
+  L.push('Sollte der gewünschte Zeitraum aus betrieblichen Gründen ungünstig sein, bin ich gerne bereit, gemeinsam mit Ihnen nach einer passenden Alternative zu suchen.', '');
+  L.push('Für eine kurze Rückmeldung wäre ich Ihnen sehr dankbar. Vielen Dank im Voraus für Ihr Verständnis und Ihre Unterstützung.', '');
+  L.push('Mit freundlichen Grüßen', name);
+  return L.join('\n');
+}
+function vacationMail(){
+  const rs = vacRanges(); if (!rs.length){ toast('Bitte zuerst Urlaubstage im Kalender antippen'); return; }
+  const s = S.settings; const o = {rest: !!s.mailRest, vertretung: s.mailVertretung || ''};
+  sheet(`<h3>Urlaubsantrag per E-Mail</h3><div class="sub">Prüfe den Text – du kannst alles noch ändern.</div>
+    <div class="field"><label>An</label><input class="input" id="mTo" type="email" inputmode="email" placeholder="z. B. chef@firma.de" value="${esc(s.mailTo||'')}"></div>
+    ${s.mailCc?`<div class="tiny muted" style="margin-top:4px">Kopie (CC) an: ${esc(s.mailCc)}</div>`:''}
+    <div class="field"><label>Betreff</label><input class="input" id="mSub" value="${esc(vacMailSubject(rs))}"></div>
+    <div class="grid2"><div class="field"><label>Vertretung (optional)</label><input class="input" id="mVer" placeholder="z. B. Herr Müller" value="${esc(o.vertretung)}"></div>
+      <div class="field"><label>Resturlaub nennen</label><label class="switch" style="border:none;padding:6px 0"><span class="small muted">${o.rest?'ja':'nein'}</span><input type="checkbox" class="toggle" id="mRest" ${o.rest?'checked':''}></label></div></div>
+    <div class="field"><label>Nachricht</label><textarea class="input mail-prev" id="mBody">${esc(vacMailBody(rs, o))}</textarea></div>
+    <div class="actions"><button class="btn grow primary" id="mSend">${svg('i-out')} In E-Mail-App öffnen</button></div>
+    <div class="actions" style="margin-top:8px"><button class="btn grow" id="mCopy">Text kopieren</button><button class="btn grow" id="mPdf">${svg('i-print')} Antrag als PDF</button></div>
+    <p class="tiny muted" style="margin-top:12px">Beim Öffnen der E-Mail werden die Tage in der App als „beantragt“ eingetragen. Sobald die Zusage da ist, tippst du beim Antrag auf „Genehmigen“. Das PDF kannst du über „Als PDF speichern“ sichern und an die E-Mail anhängen.</p>`,
+  (el, close) => {
+    let edited = false;
+    $('#mBody', el).oninput = () => { edited = true; };
+    const regen = () => {
+      const oo = {rest: $('#mRest', el).checked, vertretung: $('#mVer', el).value.trim()};
+      $('#mRest', el).previousElementSibling.textContent = oo.rest ? 'ja' : 'nein';
+      if (!edited) $('#mBody', el).value = vacMailBody(rs, oo); else toast('Text wurde von dir geändert – bitte dort anpassen');
+      S.settings.mailRest = oo.rest; S.settings.mailVertretung = oo.vertretung; save();
+    };
+    $('#mRest', el).onchange = regen; $('#mVer', el).onchange = regen;
+    $('#mCopy', el).onclick = async () => { const t = `Betreff: ${$('#mSub', el).value}\n\n${$('#mBody', el).value}`; try { await navigator.clipboard.writeText(t); toast('Text kopiert ✓'); } catch(_){ toast('Kopieren nicht möglich'); } };
+    $('#mPdf', el).onclick = () => vacationPDF(rs, $('#mVer', el).value.trim());
+    $('#mSend', el).onclick = () => {
+      const to = $('#mTo', el).value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)){ $('#mTo', el).focus(); toast('Bitte eine gültige E-Mail-Adresse eintragen'); return; }
+      if (to !== S.settings.mailTo){ S.settings.mailTo = to; }
+      const q = [`subject=${encodeURIComponent($('#mSub', el).value)}`, `body=${encodeURIComponent($('#mBody', el).value.replace(/\n/g, '\r\n'))}`];
+      if (S.settings.mailCc) q.unshift(`cc=${encodeURIComponent(S.settings.mailCc)}`);
+      for (const r of rs){
+        S.requests.unshift({id:uid(), kind:'abs', type: r.half?'hu':'u', from:r.from, to:r.to, note:'per E-Mail beantragt', status: S.settings.approval==='auto'?'genehmigt':'beantragt', created:Date.now(), mailed:Date.now()});
+      }
+      log(`Urlaubsantrag per E-Mail an ${to}: ${rs.map(r=>r.from===r.to?shortDate(r.from):shortDate(r.from)+'–'+shortDate(r.to)).join(', ')}`);
+      VSEL = {}; save(); close(); render();
+      const a = document.createElement('a'); a.href = `mailto:${encodeURIComponent(to).replace(/%40/g,'@')}?${q.join('&')}`; document.body.appendChild(a); a.click(); a.remove();
+      toast('Antrag eingetragen – E-Mail-App wird geöffnet');
+    };
+  });
+}
+function vacationPDF(rs, vertretung){
+  const s = S.settings; const total = rs.reduce((a,r)=>a+r.days,0); const year = +rs[0].from.slice(0,4); const v = vacation(year);
+  $('#print').innerHTML = `<h1>Urlaubsantrag</h1>
+    <div class="meta"><span>Mitarbeiter: <b>${esc((s.fullName||s.name||'').trim())}</b></span><span>Datum: ${new Date().toLocaleDateString('de-DE')}</span></div>
+    <p>Hiermit beantrage ich Erholungsurlaub für folgende Tage:</p>
+    <table><thead><tr><th>Von</th><th>Bis</th><th class="r">Arbeitstage</th></tr></thead><tbody>
+    ${rs.map(r=>`<tr><td>${WDLONG(r.from)}</td><td>${r.half?'(halber Tag)':WDLONG(r.to)}</td><td class="r">${fmtDays(r.days)}</td></tr>`).join('')}
+    <tr class="tot"><td colspan="2">Summe</td><td class="r">${fmtDays(total)}</td></tr></tbody></table>
+    <table><tbody><tr><td>Urlaubsanspruch ${year} (inkl. Resturlaub Vorjahr)</td><td class="r">${fmtDays(v.claim)}</td></tr>
+    <tr><td>Bereits genommen / geplant</td><td class="r">${fmtDays(v.taken + v.planned)}</td></tr>
+    <tr><td>Resturlaub nach diesem Antrag</td><td class="r">${fmtDays(v.rest - total)}</td></tr>
+    <tr><td>Vertretung</td><td class="r">${esc(vertretung||'—')}</td></tr></tbody></table>
+    <div class="sign"><div>Datum, Unterschrift Mitarbeiter</div></div>
+    <div class="box"><h2>Vom Vorgesetzten auszufüllen</h2>Der Urlaub wird <span class="chk"></span>genehmigt <span class="chk"></span>abgelehnt
+      <p style="margin-top:6mm">Bemerkung: ____________________________________________________________</p>
+      <div class="sign" style="margin-top:12mm"><div>Datum, Unterschrift Vorgesetzter</div></div></div>`;
+  setTimeout(()=>window.print(), 50);
+}
+function mailSettingsSheet(){
+  const s = S.settings;
+  sheet(`<h3>Urlaubsantrag per E-Mail</h3><div class="sub">Diese Angaben werden für jeden Urlaubsantrag verwendet.</div>
+    <div class="field"><label>E-Mail-Adresse für Urlaubsanträge</label><input class="input" id="msTo" type="email" inputmode="email" placeholder="z. B. personal@firma.de" value="${esc(s.mailTo||'')}"></div>
+    <div class="field"><label>Kopie an (CC, optional)</label><input class="input" id="msCc" type="email" inputmode="email" placeholder="z. B. teamleitung@firma.de" value="${esc(s.mailCc||'')}"></div>
+    <div class="field"><label>Anrede</label><input class="input" id="msSal" placeholder="Sehr geehrte Damen und Herren" value="${esc(s.mailSalutation||'')}"><div class="tiny muted">z. B. „Sehr geehrter Herr Müller“ oder „Sehr geehrte Frau Schmidt“ – ohne Komma.</div></div>
+    <div class="field"><label>Dein vollständiger Name (Unterschrift)</label><input class="input" id="msName" placeholder="Vorname Nachname" value="${esc(s.fullName||'')}"></div>
+    <div class="field"><label>Standard-Vertretung (optional)</label><input class="input" id="msVer" placeholder="z. B. Herr Müller" value="${esc(s.mailVertretung||'')}"></div>
+    <div class="actions"><button class="btn grow" data-x>Abbrechen</button><button class="btn grow primary" id="msSave">Speichern</button></div>`,
+  (el, close) => {
+    $('[data-x]', el).onclick = close;
+    $('#msSave', el).onclick = () => {
+      const to = $('#msTo', el).value.trim(), cc = $('#msCc', el).value.trim(); const ok = x => !x || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x);
+      if (!ok(to) || !ok(cc)){ toast('Bitte gültige E-Mail-Adressen eintragen'); return; }
+      Object.assign(s, {mailTo:to, mailCc:cc, mailSalutation:$('#msSal', el).value.trim().replace(/,\s*$/,''), fullName:$('#msName', el).value.trim(), mailVertretung:$('#msVer', el).value.trim()});
+      log('Einstellungen Urlaubsantrag per E-Mail geändert'); save(); close(); toast('Gespeichert ✓');
     };
   });
 }
@@ -1117,6 +1262,7 @@ function viewMehr(){
   <div class="menu">
     ${mi('nfc','i-nfc','Chip & NFC-Aufkleber','Stempel-Chip einrichten oder anlernen')}
     ${mi('work','i-clock','Arbeitszeit & Konten','Sollzeiten, Pause, Saldo, Urlaub')}
+    ${mi('mail','i-cal','Urlaubsantrag per E-Mail','Empfänger, Anrede, Unterschrift')}
     ${mi('prefs','i-gear','Einstellungen','Name, Buchungsbestätigung, Ton, Feiertage')}
     ${mi('data','i-db','Daten & Export','Sicherung, Demo-Daten, Zurücksetzen')}
   </div>
@@ -1329,7 +1475,16 @@ function bindView(){
   $('#nfcOff', v) && ($('#nfcOff', v).onclick = nfcStop);
   $$('[data-jm]', v).forEach(b => b.onclick = () => { JM.m += +b.dataset.jm; if (JM.m<0){JM.m=11;JM.y--;} if (JM.m>11){JM.m=0;JM.y++;} render(); });
   $$('[data-cm]', v).forEach(b => b.onclick = () => { CM.m += +b.dataset.cm; if (CM.m<0){CM.m=11;CM.y--;} if (CM.m>11){CM.m=0;CM.y++;} render(); });
-  $$('[data-cal]', v).forEach(c => c.onclick = () => { const k = c.dataset.cal; const a = ABSMAP[k]; if (a){ const r = S.requests.find(x=>x.id===a.id); toast(`${ABS[a.type].label} · ${r?r.status:''}`); } else if (isWorkday(k)) requestEditor({from:k,to:k}); else toast(holidayOf(k) || 'Kein Arbeitstag'); });
+  $$('[data-cal]', v).forEach(c => c.onclick = () => {
+    const k = c.dataset.cal; const a = ABSMAP[k];
+    if (a){ const r = S.requests.find(x=>x.id===a.id); toast(`${ABS[a.type].label} · ${r?r.status:''}`); return; }
+    if (!isWorkday(k)){ toast(holidayOf(k) || 'Kein Arbeitstag'); return; }
+    if (k < todayKey()){ requestEditor({from:k,to:k}); return; }
+    const cur = VSEL[k]; if (!cur) VSEL[k] = 1; else if (cur === 1) VSEL[k] = .5; else delete VSEL[k];
+    render();
+  });
+  $('#selClear', v) && ($('#selClear', v).onclick = () => { VSEL = {}; render(); });
+  $('#selMail', v) && ($('#selMail', v).onclick = () => vacationMail());
   $('#newReq', v) && ($('#newReq', v).onclick = () => requestEditor());
   $$('[data-approve]', v).forEach(b => b.onclick = () => setReq(b.dataset.approve, 'genehmigt'));
   $$('[data-reject]', v).forEach(b => b.onclick = () => setReq(b.dataset.reject, 'abgelehnt'));
@@ -1337,7 +1492,7 @@ function bindView(){
   $('#csvBtn', v) && ($('#csvBtn', v).onclick = exportCSV);
   $('#pdfBtn', v) && ($('#pdfBtn', v).onclick = exportPDF);
   $$('[data-backup]', v).forEach(b => b.onclick = saveBackup);
-  $$('[data-menu]', v).forEach(b => b.onclick = () => ({team:teamSheet, log:logSheet, nfc:nfcSheet, work:workSheet, prefs:prefsSheet, data:dataSheet})[b.dataset.menu]());
+  $$('[data-menu]', v).forEach(b => b.onclick = () => ({team:teamSheet, log:logSheet, nfc:nfcSheet, work:workSheet, prefs:prefsSheet, data:dataSheet, mail:mailSettingsSheet})[b.dataset.menu]());
   $('#installBtn', v) && ($('#installBtn', v).onclick = async () => { installEvt.prompt(); await installEvt.userChoice; installEvt = null; render(); });
 }
 $$('nav.tabs button').forEach(b => b.onclick = () => { TAB = b.dataset.tab; render(); window.scrollTo({top:0}); });
