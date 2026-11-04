@@ -407,7 +407,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
 "use strict";
 /* ============ Grundlagen ============ */
 const KEY = 'stempeluhr.v2';
-const APP_VERSION = '3.1 · 04.11.2026';
+const APP_VERSION = '3.2 · 04.11.2026';
 const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -468,6 +468,8 @@ function load(){
   return defaults();
 }
 let S = load();
+// v3.2: Urlaub 2026 aufgebraucht, neuer Anspruch erst ab 01.01.2027 (Flo, 04.11.2026)
+if (!S.settings.urlaubZuSet){ S.settings.urlaubZu = Object.assign({}, S.settings.urlaubZu||{}, {'2026':true}); if (S.settings.urlaubVorjahrFuer==null) S.settings.urlaubVorjahrFuer = 2026; S.settings.urlaubZuSet = true; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(_){} }
 if (!S.settings.pauseModeSet){ S.settings.pauseMode = 'gebucht'; S.settings.pauseModeSet = true; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(_){} }
 let IDX = {}, ABSMAP = {};
 function reindex(){
@@ -593,9 +595,15 @@ function vacation(year = new Date().getFullYear()){
       else if (r.status === 'beantragt') requested += v;
     }
   }
-  const claim = (+S.settings.urlaub||0) + (+S.settings.urlaubVorjahr||0);
-  return {claim, taken, planned, requested, rest: claim - taken - planned};
+  const s = S.settings;
+  const vor = (s.urlaubVorjahrFuer==null || +s.urlaubVorjahrFuer===year) ? (+s.urlaubVorjahr||0) : 0;
+  const closed = vacClosed(year);
+  // Jahr abgeschlossen: kein Resturlaub mehr – Anspruch = bereits genommen + geplant
+  const claim = closed ? taken + planned : (+s.urlaub||0) + vor;
+  return {claim, taken, planned, requested, rest: claim - taken - planned, closed, vor, year};
 }
+function vacClosed(year){ return !!(S.settings.urlaubZu||{})[year]; }
+const vacClosedMsg = y => `Für ${y} hast du keinen Urlaub mehr – neuer Anspruch ab 01.01.${y+1}`;
 function countAbs(type, year){ let n = 0; for (const k in ABSMAP){ const a = ABSMAP[k]; if (!a.pending && a.type===type && +k.slice(0,4)===year) n++; } return n; }
 function workdaysIn(from, to, type){ let n = 0; for (let k = from; k <= to; k = addDays(k,1)) if (isWorkday(k)) n += (type==='hu'?.5:1); return n; }
 
@@ -887,7 +895,7 @@ function viewBuchen(){
   <div class="card" style="padding:6px 12px">${historyTable()}</div>
   <div class="grid2" style="margin-top:12px">
     <div class="card"><div class="stat-label">Gleitzeit</div><div class="stat-val num ${sCls(sal.incl)}">${dur(sal.incl,true)}</div><div class="stat-sub">${sal.todayClosed?'inkl. heute':'Stand Vortag'}</div></div>
-    <div class="card"><div class="stat-label">Resturlaub</div><div class="stat-val num">${fmtDays(vac.rest)} <span style="font-size:15px" class="muted">Tage</span></div><div class="stat-sub">von ${fmtDays(vac.claim)} · ${fmtDays(vac.planned)} geplant</div></div>
+    <div class="card"><div class="stat-label">Resturlaub</div><div class="stat-val num">${fmtDays(vac.rest)} <span style="font-size:15px" class="muted">Tage</span></div><div class="stat-sub">${vac.closed ? `ab 01.01.${new Date().getFullYear()+1} wieder ${fmtDays(+S.settings.urlaub||0)}` : `von ${fmtDays(vac.claim)} · ${fmtDays(vac.planned)} geplant`}</div></div>
   </div>
   <h2 class="section">Diese Woche</h2>
   <div class="card"><div class="between small"><span class="muted">Ist / Soll</span><b class="num">${dur(wSum.ist)} / ${dur(wSum.soll)}</b></div><div class="week">${wk}</div></div>`;
@@ -899,9 +907,10 @@ function infoSheet(){
       <div class="acc-row"><span>Gleitzeitsaldo Vortag</span><b class="num ${sCls(sal.base)}">${dur(sal.base,true)}</b></div>
       <div class="acc-row"><span>Arbeitszeit heute</span><b class="num">${dur(d.net)}</b></div>
       <div class="acc-row"><span>Tagessaldo heute</span><b class="num ${sCls(d.diff)}">${dur(d.diff,true)}</b></div>
-      <div class="acc-row"><span>Urlaubsanspruch ${y}</span><b class="num">${fmtDays(vac.claim)} Tage</b></div>
+      <div class="acc-row"><span>Urlaubsanspruch ${y}</span><b class="num">${vac.closed ? 'aufgebraucht' : fmtDays(vac.claim) + ' Tage'}</b></div>
       <div class="acc-row"><span>Genommen / geplant</span><b class="num">${fmtDays(vac.taken)} / ${fmtDays(vac.planned)}</b></div>
       <div class="acc-row"><span>Resturlaub</span><b class="num">${fmtDays(vac.rest)} Tage</b></div>
+      ${vac.closed ? `<div class="acc-row"><span>Neuer Anspruch ab 01.01.${y+1}</span><b class="num">${fmtDays(+S.settings.urlaub||0)} Tage</b></div>` : ''}
     </div></div><div class="actions"><button class="btn block" data-close>Schließen</button></div>`, (el,c)=> $('[data-close]',el).onclick=c);
 }
 
@@ -1018,12 +1027,13 @@ function viewKonten(){
     <div class="between"><div><div class="stat-label">Resturlaub</div><div class="big-num num">${fmtDays(vac.rest)} <span class="muted" style="font-size:16px;font-weight:500">Tage</span></div></div>
       <svg class="ring" viewBox="0 0 84 84"><circle cx="42" cy="42" r="36" fill="none" stroke="var(--surface-2)" stroke-width="9"/><circle cx="42" cy="42" r="36" fill="none" stroke="var(--c-u)" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(C*vacPct).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 42 42)"/></svg></div>
     <div class="acc" style="margin-top:8px">
-      <div class="acc-row"><span>Jahresanspruch</span><b class="num">${fmtDays(+S.settings.urlaub||0)}</b></div>
-      <div class="acc-row"><span>Resturlaub Vorjahr</span><b class="num">${fmtDays(+S.settings.urlaubVorjahr||0)}</b></div>
+      ${vac.closed ? `<div class="acc-row"><span>Jahresanspruch</span><b>aufgebraucht</b></div>` : `<div class="acc-row"><span>Jahresanspruch</span><b class="num">${fmtDays(+S.settings.urlaub||0)}</b></div>
+      <div class="acc-row"><span>Resturlaub Vorjahr</span><b class="num">${fmtDays(vac.vor)}</b></div>`}
       <div class="acc-row"><span>Genommen</span><b class="num">${fmtDays(vac.taken)}</b></div>
       <div class="acc-row"><span>Geplant (genehmigt)</span><b class="num">${fmtDays(vac.planned)}</b></div>
       <div class="acc-row"><span>Beantragt (offen)</span><b class="num">${fmtDays(vac.requested)}</b></div>
     </div>
+    ${vac.closed ? `<div class="small muted" style="margin-top:8px">${svg('i-info','i ti')}${vacClosedMsg(y)} (${fmtDays(+S.settings.urlaub||0)} Tage).</div>` : ''}
   </div>
   <h2 class="section">Abwesenheiten ${y}</h2>
   <div class="card"><div class="acc">
@@ -1035,7 +1045,7 @@ function absOverview(){
   const y = new Date().getFullYear(); const v = vacation(y); const open = S.requests.filter(r=>r.kind==='abs' && r.status==='beantragt').length;
   const box = (label, val, sub, color) => `<div class="card ov"><div class="stat-label">${label}</div><div class="ov-v num" ${color?`style="color:${color}"`:''}>${val}</div><div class="stat-sub">${sub}</div></div>`;
   return `<div class="ov-grid">
-    ${box('Resturlaub', fmtDays(v.rest), `von ${fmtDays(v.claim)} Tagen ${y}`, 'var(--c-u)')}
+    ${box('Resturlaub', fmtDays(v.rest), v.closed ? `${y} aufgebraucht · ab 01.01.${y+1} wieder ${fmtDays(+S.settings.urlaub||0)} Tage` : `von ${fmtDays(v.claim)} Tagen ${y}`, 'var(--c-u)')}
     ${box('Urlaub genommen', fmtDays(v.taken), `${fmtDays(v.planned)} Tage geplant`)}
     ${box('Offene Anträge', open, open===1?'wartet auf Antwort':'warten auf Antwort', open?'var(--warn)':'')}
     ${box('Krankheitstage', countAbs('k', y), `im Jahr ${y}`, 'var(--c-k)')}
@@ -1113,6 +1123,7 @@ function requestEditor(pre={}){
         const k = c.dataset.k;
         if (ABSMAP[k]){ toast(`Schon eingetragen: ${ABS[ABSMAP[k].type].label}`); return; }
         if (!isWorkday(k)){ toast(holidayOf(k) || 'Kein Arbeitstag'); return; }
+        if (isVac(type) && !sel[k] && vacClosed(+k.slice(0,4))){ toast(vacClosedMsg(+k.slice(0,4))); return; }
         const want = type === 'hu' ? .5 : 1;
         if (sel[k] === want) delete sel[k]; else sel[k] = want;
         draw();
@@ -1121,13 +1132,14 @@ function requestEditor(pre={}){
       $('#rqSum', el).innerHTML = rs.length
         ? `<div class="between small"><span class="muted">${isVac(type) ? 'Urlaub' : ABS[type].label}</span><b class="num">${fmtDays(total)} ${total===1?'Arbeitstag':'Arbeitstage'}</b></div>
            <div class="small" style="margin-top:4px">${rs.map(r=>esc(rangeText(r))).join('<br>')}</div>
-           ${ABS[type].vac ? `<div class="between small" style="margin-top:6px"><span class="muted">Resturlaub danach</span><b class="num">${fmtDays(vacation().rest - total)} Tage</b></div>` : ''}`
+           ${ABS[type].vac ? `<div class="between small" style="margin-top:6px"><span class="muted">Resturlaub danach</span><b class="num">${fmtDays(vacation(+rs[0].from.slice(0,4)).rest - total)} Tage</b></div>` : ''}`
         : '<div class="small muted">Noch keine Tage ausgewählt.</div>';
       $('#rqSend', el).textContent = isVac(type) ? 'Weiter zum Urlaubsantrag' : 'Eintragen';
     };
     $$('#rqType button', el).forEach(b => b.onclick = () => {
       type = b.dataset.t; $$('#rqType button', el).forEach(x=>x.classList.toggle('on', x===b));
       if (!isVac(type)) for (const k in sel) if (sel[k] === .5) sel[k] = 1;
+      if (isVac(type)){ let cy0 = 0; for (const k in sel) if (vacClosed(+k.slice(0,4))){ delete sel[k]; cy0 = +k.slice(0,4); } if (cy0) toast(vacClosedMsg(cy0)); }
       draw();
     });
     $$('[data-rm]', el).forEach(b => b.onclick = () => { cm += +b.dataset.rm; if (cm<0){cm=11;cy--;} if (cm>11){cm=0;cy++;} draw(); });
@@ -1431,7 +1443,8 @@ function workSheet(){
     <div class="grid2"><div class="field"><label>Beginn Zeitkonto</label><input class="input" type="date" id="sStart" value="${s.startDate||todayKey()}"></div>
       <div class="field"><label>Startsaldo (±Std:Min)</label><input class="input num" id="sSaldo" value="${dur(s.startSaldo,true)||'0:00'}"></div></div>
     <div class="grid2"><div class="field"><label>Urlaubstage / Jahr</label><input class="input num" type="number" step="0.5" id="sUrl" value="${s.urlaub}"></div>
-      <div class="field"><label>Resturlaub Vorjahr</label><input class="input num" type="number" step="0.5" id="sUrlV" value="${s.urlaubVorjahr}"></div></div>
+      <div class="field"><label>Resturlaub aus ${new Date().getFullYear()-1}</label><input class="input num" type="number" step="0.5" id="sUrlV" value="${(s.urlaubVorjahrFuer==null||+s.urlaubVorjahrFuer===new Date().getFullYear()) ? s.urlaubVorjahr : 0}"></div></div>
+    <label class="switch"><span><b>Urlaub ${new Date().getFullYear()} aufgebraucht</b><br><span class="small muted">Kein Resturlaub mehr in diesem Jahr, neuer Anspruch ab 01.01.${new Date().getFullYear()+1}</span></span><input type="checkbox" class="toggle" id="sUrlZu" ${vacClosed(new Date().getFullYear())?'checked':''}></label>
     <div class="actions"><button class="btn grow" data-x>Abbrechen</button><button class="btn grow primary" id="sSave">Speichern</button></div>`,
   (el, close) => {
     $$('#sPMode button', el).forEach(b => b.onclick = () => $$('#sPMode button', el).forEach(x=>x.classList.toggle('on', x===b)));
@@ -1444,6 +1457,8 @@ function workSheet(){
       if (bad || sal===null){ toast('Bitte Zeiten als Std:Min eingeben, z. B. 8:30'); return; }
       const pm = $('#sPMode button.on', el)?.dataset.v || 'gebucht';
       Object.assign(s, {pauseMode:pm, soll, pause:+$('#sPause',el).value||0, startDate:$('#sStart',el).value||s.startDate, startSaldo:sal, urlaub:+$('#sUrl',el).value||0, urlaubVorjahr:+$('#sUrlV',el).value||0});
+      const cy = new Date().getFullYear(); s.urlaubVorjahrFuer = cy;
+      s.urlaubZu = Object.assign({}, s.urlaubZu||{}); if ($('#sUrlZu',el).checked) s.urlaubZu[cy] = true; else delete s.urlaubZu[cy];
       log('Arbeitszeit-Einstellungen geändert'); save(); close(); render(); toast('Gespeichert ✓');
     };
   });
@@ -1514,7 +1529,7 @@ function loadDemo(){
   try { if (!S.demo) localStorage.setItem(KEY+'.backup', JSON.stringify(S)); } catch(_){}
   const keep = S.settings; const t = todayKey(); const rnd = (a,b) => a + Math.floor(Math.random()*(b-a+1));
   const D = defaults(); D.settings = Object.assign({}, keep, {chips:keep.chips}); D.demo = true;
-  const start = addDays(t, -42 - ((fromKey(t).getDay()+6)%7)); D.settings.startDate = start; D.settings.startSaldo = 135; D.settings.urlaubVorjahr = 3;
+  const start = addDays(t, -42 - ((fromKey(t).getDay()+6)%7)); D.settings.startDate = start; D.settings.startSaldo = 135; D.settings.urlaubVorjahr = 3; D.settings.urlaubVorjahrFuer = new Date().getFullYear(); D.settings.urlaubZu = {};
   const mk = (k, mins, type, src) => { const d = fromKey(k); d.setHours(Math.floor(mins/60), mins%60, rnd(0,59), 0); return {id:uid(), ts:d.getTime(), type, src}; };
   const uFrom = addDays(start, 15), uTo = addDays(start, 18); const krank = addDays(start, 29);
   D.requests.push({id:uid(), kind:'abs', type:'u', from:uFrom, to:uTo, note:'Herbsturlaub', status:'genehmigt', created:fromKey(start).getTime(), decided:fromKey(start).getTime()+864e5});
@@ -1609,6 +1624,7 @@ function bindView(){
     if (a){ const r = S.requests.find(x=>x.id===a.id); toast(`${ABS[a.type].label} · ${r?r.status:''}`); return; }
     if (!isWorkday(k)){ toast(holidayOf(k) || 'Kein Arbeitstag'); return; }
     if (k < todayKey()){ requestEditor({from:k, type:'k'}); return; }
+    if (!VSEL[k] && vacClosed(+k.slice(0,4))){ toast(vacClosedMsg(+k.slice(0,4))); return; }
     const cur = VSEL[k]; if (!cur) VSEL[k] = 1; else if (cur === 1) VSEL[k] = .5; else delete VSEL[k];
     render();
   });
