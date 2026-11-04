@@ -391,7 +391,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
 "use strict";
 /* ============ Grundlagen ============ */
 const KEY = 'stempeluhr.v2';
-const APP_VERSION = '2.6 · 04.11.2026';
+const APP_VERSION = '2.7 · 04.11.2026';
 const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -1259,12 +1259,18 @@ function mailSettingsSheet(){
     <div class="card" style="box-shadow:none">
       <div class="small">Status: ${s.gasUrl ? '<b class="pos">verbunden ✓</b>' : '<b>nicht verbunden</b> – Anträge öffnen sich dann in der Gmail-App.'}</div>
       <div class="field"><label>Script-Adresse (Web-App-URL)</label><input class="input" id="msGas" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(s.gasUrl||'')}"></div>
-      <div class="actions"><button class="btn grow" id="msCode">Script-Code kopieren</button><button class="btn grow" id="msTest">Verbindung testen</button></div>
+      <div class="actions"><button class="btn grow primary" id="msShare">${svg('i-out')} Script-Code an mich senden</button></div>
+      <div class="actions" style="margin-top:8px"><button class="btn grow" id="msCode">Code kopieren</button><button class="btn grow" id="msTest">Verbindung testen</button></div>
       <div class="tiny muted" style="margin-top:10px">Der Code enthält einen geheimen Schlüssel nur für dein Handy. Die Einrichtung im Google-Konto machen wir Schritt für Schritt gemeinsam.</div>
     </div>
     <div class="actions"><button class="btn grow" data-x>Abbrechen</button><button class="btn grow primary" id="msSave">Speichern</button></div>`,
   (el, close) => {
     $('[data-x]', el).onclick = close;
+    $('#msShare', el).onclick = async () => {
+      const code = gasScript(); const subject = 'Stempeluhr – Script-Code für Gmail-Versand';
+      if (navigator.share){ try { await navigator.share({title: subject, text: code}); return; } catch(e){ if (e.name === 'AbortError') return; } }
+      const a = document.createElement('a'); a.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(code.replace(/\n/g,'\r\n'))}`; document.body.appendChild(a); a.click(); a.remove();
+    };
     $('#msCode', el).onclick = async () => { try { await navigator.clipboard.writeText(gasScript()); toast('Script-Code kopiert ✓'); } catch(_){ toast('Kopieren nicht möglich'); } };
     $('#msTest', el).onclick = async () => {
       const url = $('#msGas', el).value.trim(); if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)){ toast('Bitte die Web-App-URL (endet auf /exec) eintragen'); return; }
