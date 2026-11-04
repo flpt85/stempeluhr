@@ -391,7 +391,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
 "use strict";
 /* ============ Grundlagen ============ */
 const KEY = 'stempeluhr.v2';
-const APP_VERSION = '2.5 · 04.11.2026';
+const APP_VERSION = '2.6 · 04.11.2026';
 const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -1111,47 +1111,40 @@ function selBar(){
     <div class="actions"><button class="btn grow" id="selClear">${svg('i-x')} Auswahl aufheben</button><button class="btn grow primary" id="selMail">${svg('i-check')} Urlaubsantrag erstellen</button></div></div>`;
 }
 function vacMailSubject(rs){
-  const total = rs.reduce((a,r)=>a+r.days,0); const n = (S.settings.fullName||'').trim();
-  const span = rs.length === 1 ? (rs[0].from===rs[0].to ? shortDate(rs[0].from) : `${shortDate(rs[0].from)} – ${shortDate(rs[0].to)}`) : `${fmtDays(total)} Urlaubstage`;
+  const n = (S.settings.name||'').trim();
+  const span = rs.map(r => r.from===r.to ? dm(r.from) + (r.half?' (½)':'') : `${dm(r.from)}–${dm(r.to)}`).join(', ');
   return `Urlaubsantrag${n ? ' ' + n : ''}: ${span}`;
 }
+const dm = k => { const d = fromKey(k); return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.`; };
+const wdm = k => `${WD[fromKey(k).getDay()]}. ${dm(k)}`;
 function vacMailBody(rs, o){
   const s = S.settings; const total = rs.reduce((a,r)=>a+r.days,0);
-  const anrede = (s.mailSalutation||'').trim() || 'Sehr geehrte Damen und Herren';
-  const name = (s.fullName||'').trim() || (s.name||'');
-  const year = rs[0].from.slice(0,4);
-  const L = [];
-  L.push(`${anrede},`, '');
-  L.push('ich hoffe, es geht Ihnen gut.', '');
-  if (rs.length === 1 && rs[0].days === total){
-    L.push(`hiermit möchte ich Sie höflich um die Genehmigung meines Erholungsurlaubs für den folgenden Zeitraum bitten:`, '');
-  } else {
-    L.push(`hiermit möchte ich Sie höflich um die Genehmigung meines Erholungsurlaubs für die folgenden Tage bitten:`, '');
-  }
-  for (const r of rs) L.push(`• ${rangeText(r)}`);
-  L.push('');
-  let sum = `Das entspricht insgesamt ${fmtDays(total)} ${total===1?'Urlaubstag':'Urlaubstagen'}.`;
-  if (o.rest){ const v = vacation(+year); sum += ` Nach meinen Aufzeichnungen verbleiben mir danach noch ${fmtDays(v.rest - total)} von ${fmtDays(v.claim)} Urlaubstagen für das Jahr ${year}.`; }
-  L.push(sum, '');
-  L.push('Selbstverständlich werde ich vor meiner Abwesenheit alle laufenden Aufgaben sorgfältig abschließen bzw. ordnungsgemäß übergeben, damit während meines Urlaubs ein reibungsloser Ablauf gewährleistet ist.' + (o.vertretung ? ` Meine Vertretung übernimmt in dieser Zeit freundlicherweise ${o.vertretung}.` : ''), '');
-  L.push('Sollte der gewünschte Zeitraum aus betrieblichen Gründen ungünstig sein, bin ich gerne bereit, gemeinsam mit Ihnen nach einer passenden Alternative zu suchen.', '');
-  L.push('Für eine kurze Rückmeldung wäre ich Ihnen sehr dankbar. Vielen Dank im Voraus für Ihr Verständnis und Ihre Unterstützung.', '');
-  L.push('Mit freundlichen Grüßen', name);
-  return L.join('\n');
+  const anrede = (s.mailSalutation||'').trim() || 'Hallo';
+  const name = (s.name||'').trim() || (s.fullName||'').trim();
+  const parts = rs.map(r => r.half ? `am ${wdm(r.from)} einen halben Tag` : r.from===r.to ? `am ${wdm(r.from)}` : `vom ${wdm(r.from)} bis ${wdm(r.to)}`);
+  const list = parts.length > 1 ? parts.slice(0,-1).join(', ') + ' und ' + parts[parts.length-1] : parts[0];
+  let line = `ich würde gerne ${list} Urlaub nehmen, das wären ${fmtDays(total)} ${total===1?'Tag':'Tage'}.`;
+  if (o.rest){ const v = vacation(+rs[0].from.slice(0,4)); line += ` Danach hätte ich noch ${fmtDays(v.rest - total)} Tage übrig.`; }
+  if (o.vertretung) line += ` ${o.vertretung} übernimmt in der Zeit für mich.`;
+  line += ' Passt das bei euch?';
+  return `${anrede},\n\n${line}\n\nDanke dir und viele Grüße\n${name}`;
 }
 function vacationMail(){
   const rs = vacRanges(); if (!rs.length){ toast('Bitte zuerst Urlaubstage im Kalender antippen'); return; }
-  const s = S.settings; const o = {rest: !!s.mailRest, vertretung: s.mailVertretung || ''};
-  sheet(`<h3>Urlaubsantrag per E-Mail</h3><div class="sub">Prüfe den Text – du kannst alles noch ändern.</div>
+  const s = S.settings; const o = {rest: !!s.mailRest, vertretung: s.mailVertretung || ''}; const direct = !!s.gasUrl;
+  sheet(`<h3>Urlaubsantrag</h3><div class="sub">${direct ? 'Wird direkt über dein Gmail verschickt.' : 'Prüfe den Text – du kannst alles noch ändern.'}</div>
     <div class="field"><label>An</label><input class="input" id="mTo" type="email" inputmode="email" placeholder="z. B. chef@firma.de" value="${esc(s.mailTo||'')}"></div>
     ${s.mailCc?`<div class="tiny muted" style="margin-top:4px">Kopie (CC) an: ${esc(s.mailCc)}</div>`:''}
     <div class="field"><label>Betreff</label><input class="input" id="mSub" value="${esc(vacMailSubject(rs))}"></div>
-    <div class="grid2"><div class="field"><label>Vertretung (optional)</label><input class="input" id="mVer" placeholder="z. B. Herr Müller" value="${esc(o.vertretung)}"></div>
+    <div class="grid2"><div class="field"><label>Vertretung (optional)</label><input class="input" id="mVer" placeholder="z. B. Markus" value="${esc(o.vertretung)}"></div>
       <div class="field"><label>Resturlaub nennen</label><label class="switch" style="border:none;padding:6px 0"><span class="small muted">${o.rest?'ja':'nein'}</span><input type="checkbox" class="toggle" id="mRest" ${o.rest?'checked':''}></label></div></div>
-    <div class="field"><label>Nachricht</label><textarea class="input mail-prev" id="mBody">${esc(vacMailBody(rs, o))}</textarea></div>
-    <div class="actions"><button class="btn grow primary" id="mSend">${svg('i-out')} In E-Mail-App öffnen</button></div>
-    <div class="actions" style="margin-top:8px"><button class="btn grow" id="mCopy">Text kopieren</button><button class="btn grow" id="mPdf">${svg('i-print')} Antrag als PDF</button></div>
-    <p class="tiny muted" style="margin-top:12px">Beim Öffnen der E-Mail werden die Tage in der App als „beantragt“ eingetragen. Sobald die Zusage da ist, tippst du beim Antrag auf „Genehmigen“. Das PDF kannst du über „Als PDF speichern“ sichern und an die E-Mail anhängen.</p>`,
+    <div class="field"><label>Nachricht</label><textarea class="input mail-prev" id="mBody" style="min-height:240px">${esc(vacMailBody(rs, o))}</textarea></div>
+    ${direct ? `<label class="switch" style="border:none"><span><b>PDF-Urlaubsantrag anhängen</b><br><span class="small muted">mit Unterschriftsfeldern</span></span><input type="checkbox" class="toggle" id="mAtt" ${s.mailAttach?'checked':''}></label>
+      <div class="actions"><button class="btn grow primary" id="mDirect">${svg('i-check')} Jetzt senden</button></div>
+      <div class="actions" style="margin-top:8px"><button class="btn grow" id="mSend">In Gmail-App öffnen</button><button class="btn grow" id="mPdf">${svg('i-print')} PDF</button></div>`
+    : `<div class="actions"><button class="btn grow primary" id="mSend">${svg('i-out')} In E-Mail-App öffnen</button></div>
+      <div class="actions" style="margin-top:8px"><button class="btn grow" id="mCopy">Text kopieren</button><button class="btn grow" id="mPdf">${svg('i-print')} Antrag als PDF</button></div>
+      <p class="tiny muted" style="margin-top:12px">Tipp: Unter Mehr → Urlaubsantrag per E-Mail kannst du Gmail verbinden, dann geht der Antrag mit einem Tipp direkt raus.</p>`}`,
   (el, close) => {
     let edited = false;
     $('#mBody', el).oninput = () => { edited = true; };
@@ -1162,58 +1155,128 @@ function vacationMail(){
       S.settings.mailRest = oo.rest; S.settings.mailVertretung = oo.vertretung; save();
     };
     $('#mRest', el).onchange = regen; $('#mVer', el).onchange = regen;
-    $('#mCopy', el).onclick = async () => { const t = `Betreff: ${$('#mSub', el).value}\n\n${$('#mBody', el).value}`; try { await navigator.clipboard.writeText(t); toast('Text kopiert ✓'); } catch(_){ toast('Kopieren nicht möglich'); } };
+    $('#mCopy', el) && ($('#mCopy', el).onclick = async () => { const t = `Betreff: ${$('#mSub', el).value}\n\n${$('#mBody', el).value}`; try { await navigator.clipboard.writeText(t); toast('Text kopiert ✓'); } catch(_){ toast('Kopieren nicht möglich'); } });
     $('#mPdf', el).onclick = () => vacationPDF(rs, $('#mVer', el).value.trim());
+    const checkTo = () => { const to = $('#mTo', el).value.trim(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)){ $('#mTo', el).focus(); toast('Bitte eine gültige E-Mail-Adresse eintragen'); return null; } S.settings.mailTo = to; return to; };
+    const record = (to, how) => {
+      for (const r of rs) S.requests.unshift({id:uid(), kind:'abs', type: r.half?'hu':'u', from:r.from, to:r.to, note: how, status: S.settings.approval==='auto'?'genehmigt':'beantragt', created:Date.now(), mailed:Date.now()});
+      log(`Urlaubsantrag an ${to} (${how}): ${rs.map(r=>r.from===r.to?shortDate(r.from):shortDate(r.from)+'–'+shortDate(r.to)).join(', ')}`);
+      VSEL = {}; save(); close(); render();
+    };
     $('#mSend', el).onclick = () => {
-      const to = $('#mTo', el).value.trim();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)){ $('#mTo', el).focus(); toast('Bitte eine gültige E-Mail-Adresse eintragen'); return; }
-      if (to !== S.settings.mailTo){ S.settings.mailTo = to; }
+      const to = checkTo(); if (!to) return;
       const q = [`subject=${encodeURIComponent($('#mSub', el).value)}`, `body=${encodeURIComponent($('#mBody', el).value.replace(/\n/g, '\r\n'))}`];
       if (S.settings.mailCc) q.unshift(`cc=${encodeURIComponent(S.settings.mailCc)}`);
-      for (const r of rs){
-        S.requests.unshift({id:uid(), kind:'abs', type: r.half?'hu':'u', from:r.from, to:r.to, note:'per E-Mail beantragt', status: S.settings.approval==='auto'?'genehmigt':'beantragt', created:Date.now(), mailed:Date.now()});
-      }
-      log(`Urlaubsantrag per E-Mail an ${to}: ${rs.map(r=>r.from===r.to?shortDate(r.from):shortDate(r.from)+'–'+shortDate(r.to)).join(', ')}`);
-      VSEL = {}; save(); close(); render();
+      record(to, 'per E-Mail beantragt');
       const a = document.createElement('a'); a.href = `mailto:${encodeURIComponent(to).replace(/%40/g,'@')}?${q.join('&')}`; document.body.appendChild(a); a.click(); a.remove();
       toast('Antrag eingetragen – E-Mail-App wird geöffnet');
     };
+    $('#mDirect', el) && ($('#mDirect', el).onclick = async () => {
+      const to = checkTo(); if (!to) return;
+      const btn = $('#mDirect', el); btn.disabled = true; btn.textContent = 'Wird gesendet …';
+      const att = $('#mAtt', el).checked; S.settings.mailAttach = att; save();
+      const payload = {token:S.settings.gasToken, to, cc:S.settings.mailCc||'', subject:$('#mSub', el).value, body:$('#mBody', el).value,
+        fromName:(S.settings.fullName||S.settings.name||'').trim(), pdfHtml: att ? vacationFormHTML(rs, $('#mVer', el).value.trim(), true) : '', pdfName: `Urlaubsantrag ${rs[0].from}.pdf`};
+      const res = await gasSend(payload);
+      if (res.ok){ record(to, 'per Gmail gesendet'); feedback(false); toast('E-Mail gesendet ✓'); }
+      else { btn.disabled = false; btn.innerHTML = `${svg('i-check')} Jetzt senden`; toast('Senden fehlgeschlagen: ' + res.error); }
+    });
   });
 }
-function vacationPDF(rs, vertretung){
+async function gasSend(payload){
+  if (!navigator.onLine) return {ok:false, error:'keine Internetverbindung'};
+  try {
+    const r = await fetch(S.settings.gasUrl, {method:'POST', body: JSON.stringify(payload)});
+    const j = await r.json().catch(() => null);
+    if (j && j.ok) return {ok:true};
+    return {ok:false, error: j && j.error === 'unauthorized' ? 'Schlüssel passt nicht – Einrichtung prüfen' : (j && j.error) || ('Fehler ' + r.status)};
+  } catch(e){ return {ok:false, error:'Script nicht erreichbar – Adresse prüfen'}; }
+}
+function vacationFormHTML(rs, vertretung, standalone){
   const s = S.settings; const total = rs.reduce((a,r)=>a+r.days,0); const year = +rs[0].from.slice(0,4); const v = vacation(year);
-  $('#print').innerHTML = `<h1>Urlaubsantrag</h1>
-    <div class="meta"><span>Mitarbeiter: <b>${esc((s.fullName||s.name||'').trim())}</b></span><span>Datum: ${new Date().toLocaleDateString('de-DE')}</span></div>
+  const td = 'style="border-bottom:1px solid #bbb;padding:6px 8px;text-align:left"', tr = 'style="border-bottom:1px solid #bbb;padding:6px 8px;text-align:right"';
+  const body = `<h1 style="font-size:20px;margin:0 0 6px">Urlaubsantrag</h1>
+    <div style="display:flex;justify-content:space-between;font-size:13px;color:#333"><span>Mitarbeiter: <b>${esc((s.fullName||s.name||'').trim())}</b></span><span>Datum: ${new Date().toLocaleDateString('de-DE')}</span></div>
     <p>Hiermit beantrage ich Erholungsurlaub für folgende Tage:</p>
-    <table><thead><tr><th>Von</th><th>Bis</th><th class="r">Arbeitstage</th></tr></thead><tbody>
-    ${rs.map(r=>`<tr><td>${WDLONG(r.from)}</td><td>${r.half?'(halber Tag)':WDLONG(r.to)}</td><td class="r">${fmtDays(r.days)}</td></tr>`).join('')}
-    <tr class="tot"><td colspan="2">Summe</td><td class="r">${fmtDays(total)}</td></tr></tbody></table>
-    <table><tbody><tr><td>Urlaubsanspruch ${year} (inkl. Resturlaub Vorjahr)</td><td class="r">${fmtDays(v.claim)}</td></tr>
-    <tr><td>Bereits genommen / geplant</td><td class="r">${fmtDays(v.taken + v.planned)}</td></tr>
-    <tr><td>Resturlaub nach diesem Antrag</td><td class="r">${fmtDays(v.rest - total)}</td></tr>
-    <tr><td>Vertretung</td><td class="r">${esc(vertretung||'—')}</td></tr></tbody></table>
-    <div class="sign"><div>Datum, Unterschrift Mitarbeiter</div></div>
-    <div class="box"><h2>Vom Vorgesetzten auszufüllen</h2>Der Urlaub wird <span class="chk"></span>genehmigt <span class="chk"></span>abgelehnt
-      <p style="margin-top:6mm">Bemerkung: ____________________________________________________________</p>
-      <div class="sign" style="margin-top:12mm"><div>Datum, Unterschrift Vorgesetzter</div></div></div>`;
+    <table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th ${td}>Von</th><th ${td}>Bis</th><th ${tr}>Arbeitstage</th></tr></thead><tbody>
+    ${rs.map(r=>`<tr><td ${td}>${WDLONG(r.from)}</td><td ${td}>${r.half?'(halber Tag)':WDLONG(r.to)}</td><td ${tr}>${fmtDays(r.days)}</td></tr>`).join('')}
+    <tr><td ${td} colspan="2"><b>Summe</b></td><td ${tr}><b>${fmtDays(total)}</b></td></tr></tbody></table>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:14px"><tbody>
+    <tr><td ${td}>Urlaubsanspruch ${year} (inkl. Resturlaub Vorjahr)</td><td ${tr}>${fmtDays(v.claim)}</td></tr>
+    <tr><td ${td}>Bereits genommen / geplant</td><td ${tr}>${fmtDays(v.taken + v.planned)}</td></tr>
+    <tr><td ${td}>Resturlaub nach diesem Antrag</td><td ${tr}>${fmtDays(v.rest - total)}</td></tr>
+    <tr><td ${td}>Vertretung</td><td ${tr}>${esc(vertretung||'—')}</td></tr></tbody></table>
+    <div style="margin-top:60px;border-top:1px solid #000;width:55%;padding-top:4px;font-size:11px">Datum, Unterschrift Mitarbeiter</div>
+    <div style="border:1px solid #000;padding:14px;margin-top:30px;font-size:13px"><b>Vom Vorgesetzten auszufüllen</b><br><br>Der Urlaub wird &nbsp;☐ genehmigt &nbsp;&nbsp;☐ abgelehnt<br><br>Bemerkung: ______________________________________________
+      <div style="margin-top:50px;border-top:1px solid #000;width:55%;padding-top:4px;font-size:11px">Datum, Unterschrift Vorgesetzter</div></div>`;
+  return standalone ? `<html><head><meta charset="utf-8"></head><body style="font-family:Arial,Helvetica,sans-serif;color:#000;padding:20px">${body}</body></html>` : body;
+}
+function vacationPDF(rs, vertretung){
+  $('#print').innerHTML = vacationFormHTML(rs, vertretung, false);
   setTimeout(()=>window.print(), 50);
 }
+function gasScript(){
+  return `// Stempeluhr – Versand von Urlaubsanträgen über dein Gmail
+// Nicht weitergeben: Der Schlüssel unten schützt dein Script.
+const SCHLUESSEL = '${S.settings.gasToken}';
+
+function doPost(e) {
+  try {
+    const d = JSON.parse(e.postData.contents);
+    if (d.token !== SCHLUESSEL) return antwort({ ok: false, error: 'unauthorized' });
+    if (d.test) return antwort({ ok: true, test: true });
+    const opt = { name: d.fromName || '' };
+    if (d.cc) opt.cc = d.cc;
+    if (d.pdfHtml) {
+      opt.attachments = [Utilities.newBlob(d.pdfHtml, 'text/html', 'antrag.html').getAs('application/pdf').setName(d.pdfName || 'Urlaubsantrag.pdf')];
+    }
+    GmailApp.sendEmail(d.to, d.subject, d.body, opt);
+    return antwort({ ok: true });
+  } catch (err) {
+    return antwort({ ok: false, error: String(err) });
+  }
+}
+
+function antwort(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// Einmal im Editor ausführen, um die Gmail-Berechtigung zu erteilen:
+function berechtigen() { GmailApp.getAliases(); }
+`;
+}
 function mailSettingsSheet(){
-  const s = S.settings;
+  const s = S.settings; if (!s.gasToken){ s.gasToken = uid() + uid() + uid(); save(); }
   sheet(`<h3>Urlaubsantrag per E-Mail</h3><div class="sub">Diese Angaben werden für jeden Urlaubsantrag verwendet.</div>
-    <div class="field"><label>E-Mail-Adresse für Urlaubsanträge</label><input class="input" id="msTo" type="email" inputmode="email" placeholder="z. B. personal@firma.de" value="${esc(s.mailTo||'')}"></div>
-    <div class="field"><label>Kopie an (CC, optional)</label><input class="input" id="msCc" type="email" inputmode="email" placeholder="z. B. teamleitung@firma.de" value="${esc(s.mailCc||'')}"></div>
-    <div class="field"><label>Anrede</label><input class="input" id="msSal" placeholder="Sehr geehrte Damen und Herren" value="${esc(s.mailSalutation||'')}"><div class="tiny muted">z. B. „Sehr geehrter Herr Müller“ oder „Sehr geehrte Frau Schmidt“ – ohne Komma.</div></div>
-    <div class="field"><label>Dein vollständiger Name (Unterschrift)</label><input class="input" id="msName" placeholder="Vorname Nachname" value="${esc(s.fullName||'')}"></div>
-    <div class="field"><label>Standard-Vertretung (optional)</label><input class="input" id="msVer" placeholder="z. B. Herr Müller" value="${esc(s.mailVertretung||'')}"></div>
+    <div class="field"><label>E-Mail-Adresse für Urlaubsanträge</label><input class="input" id="msTo" type="email" inputmode="email" placeholder="z. B. chef@firma.de" value="${esc(s.mailTo||'')}"></div>
+    <div class="field"><label>Kopie an (CC, optional)</label><input class="input" id="msCc" type="email" inputmode="email" placeholder="optional" value="${esc(s.mailCc||'')}"></div>
+    <div class="grid2"><div class="field"><label>Anrede</label><input class="input" id="msSal" placeholder="Hallo" value="${esc(s.mailSalutation||'')}"></div>
+      <div class="field"><label>Unterschrift (Vorname)</label><input class="input" id="msShort" placeholder="Flo" value="${esc(s.name||'')}"></div></div>
+    <div class="tiny muted" style="margin-top:4px">Anrede z. B. „Hallo Markus“ oder „Hi zusammen“ – ohne Komma.</div>
+    <div class="field"><label>Vollständiger Name (für den PDF-Antrag)</label><input class="input" id="msName" placeholder="Vorname Nachname" value="${esc(s.fullName||'')}"></div>
+    <div class="field"><label>Standard-Vertretung (optional)</label><input class="input" id="msVer" placeholder="z. B. Markus" value="${esc(s.mailVertretung||'')}"></div>
+    <h2 class="section">Direkt über Gmail senden</h2>
+    <div class="card" style="box-shadow:none">
+      <div class="small">Status: ${s.gasUrl ? '<b class="pos">verbunden ✓</b>' : '<b>nicht verbunden</b> – Anträge öffnen sich dann in der Gmail-App.'}</div>
+      <div class="field"><label>Script-Adresse (Web-App-URL)</label><input class="input" id="msGas" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(s.gasUrl||'')}"></div>
+      <div class="actions"><button class="btn grow" id="msCode">Script-Code kopieren</button><button class="btn grow" id="msTest">Verbindung testen</button></div>
+      <div class="tiny muted" style="margin-top:10px">Der Code enthält einen geheimen Schlüssel nur für dein Handy. Die Einrichtung im Google-Konto machen wir Schritt für Schritt gemeinsam.</div>
+    </div>
     <div class="actions"><button class="btn grow" data-x>Abbrechen</button><button class="btn grow primary" id="msSave">Speichern</button></div>`,
   (el, close) => {
     $('[data-x]', el).onclick = close;
+    $('#msCode', el).onclick = async () => { try { await navigator.clipboard.writeText(gasScript()); toast('Script-Code kopiert ✓'); } catch(_){ toast('Kopieren nicht möglich'); } };
+    $('#msTest', el).onclick = async () => {
+      const url = $('#msGas', el).value.trim(); if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)){ toast('Bitte die Web-App-URL (endet auf /exec) eintragen'); return; }
+      const old = S.settings.gasUrl; S.settings.gasUrl = url; const r = await gasSend({token:S.settings.gasToken, test:true}); S.settings.gasUrl = old;
+      toast(r.ok ? 'Verbindung klappt ✓ – jetzt Speichern' : 'Test fehlgeschlagen: ' + r.error);
+    };
     $('#msSave', el).onclick = () => {
-      const to = $('#msTo', el).value.trim(), cc = $('#msCc', el).value.trim(); const ok = x => !x || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x);
+      const to = $('#msTo', el).value.trim(), cc = $('#msCc', el).value.trim(), gas = $('#msGas', el).value.trim(); const ok = x => !x || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x);
       if (!ok(to) || !ok(cc)){ toast('Bitte gültige E-Mail-Adressen eintragen'); return; }
-      Object.assign(s, {mailTo:to, mailCc:cc, mailSalutation:$('#msSal', el).value.trim().replace(/,\s*$/,''), fullName:$('#msName', el).value.trim(), mailVertretung:$('#msVer', el).value.trim()});
-      log('Einstellungen Urlaubsantrag per E-Mail geändert'); save(); close(); toast('Gespeichert ✓');
+      if (gas && !/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(gas)){ toast('Script-Adresse muss mit https://script.google.com/macros/s/ beginnen und auf /exec enden'); return; }
+      Object.assign(s, {mailTo:to, mailCc:cc, mailSalutation:$('#msSal', el).value.trim().replace(/,\s*$/,''), name:$('#msShort', el).value.trim() || s.name, fullName:$('#msName', el).value.trim(), mailVertretung:$('#msVer', el).value.trim(), gasUrl:gas});
+      log('Einstellungen Urlaubsantrag per E-Mail geändert'); save(); close(); render(); toast('Gespeichert ✓');
     };
   });
 }
@@ -1262,7 +1325,7 @@ function viewMehr(){
   <div class="menu">
     ${mi('nfc','i-nfc','Chip & NFC-Aufkleber','Stempel-Chip einrichten oder anlernen')}
     ${mi('work','i-clock','Arbeitszeit & Konten','Sollzeiten, Pause, Saldo, Urlaub')}
-    ${mi('mail','i-cal','Urlaubsantrag per E-Mail','Empfänger, Anrede, Unterschrift')}
+    ${mi('mail','i-cal','Urlaubsantrag per E-Mail','Empfänger, Anrede, Gmail-Versand')}
     ${mi('prefs','i-gear','Einstellungen','Name, Buchungsbestätigung, Ton, Feiertage')}
     ${mi('data','i-db','Daten & Export','Sicherung, Demo-Daten, Zurücksetzen')}
   </div>
