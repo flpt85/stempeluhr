@@ -222,6 +222,12 @@ svg.ti{width:12px;height:12px;vertical-align:-1px;margin-right:3px}
 .type-opt b{display:block;font-size:14px;font-weight:600}
 .type-opt small{display:block;font-size:11.5px;color:var(--muted);line-height:1.3;margin-top:1px}
 .type-opt.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft);background:var(--surface)}
+.page-title{font-size:22px;letter-spacing:-.01em;margin:6px 4px 8px}
+.ov-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ov-grid .card.ov{padding:12px 10px;margin:0}
+.ov-v{font-size:22px;font-weight:700;margin-top:2px}
+.ov-grid .stat-label{font-size:10.5px}
+.ov-grid .stat-sub{font-size:11px;line-height:1.25}
 .mail-prev{white-space:pre-wrap;font-size:14px;line-height:1.55;min-height:300px;resize:vertical}
 .cal .c.pending::after{content:"";position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
 .legend{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:12px;font-size:12px;color:var(--muted)}
@@ -397,7 +403,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
 "use strict";
 /* ============ Grundlagen ============ */
 const KEY = 'stempeluhr.v2';
-const APP_VERSION = '2.8 · 04.11.2026';
+const APP_VERSION = '2.9 · 04.11.2026';
 const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -1021,6 +1027,18 @@ function viewKonten(){
   </div></div>`;
 }
 
+function absOverview(){
+  const y = new Date().getFullYear(); const v = vacation(y); const open = S.requests.filter(r=>r.kind==='abs' && r.status==='beantragt').length;
+  const box = (label, val, sub, color) => `<div class="card ov"><div class="stat-label">${label}</div><div class="ov-v num" ${color?`style="color:${color}"`:''}>${val}</div><div class="stat-sub">${sub}</div></div>`;
+  return `<div class="ov-grid">
+    ${box('Resturlaub', fmtDays(v.rest), `von ${fmtDays(v.claim)} Tagen ${y}`, 'var(--c-u)')}
+    ${box('Urlaub genommen', fmtDays(v.taken), `${fmtDays(v.planned)} Tage geplant`)}
+    ${box('Offene Anträge', open, open===1?'wartet auf Antwort':'warten auf Antwort', open?'var(--warn)':'')}
+    ${box('Krankheitstage', countAbs('k', y), `im Jahr ${y}`, 'var(--c-k)')}
+    ${box('Gleittage', countAbs('gt', y), `im Jahr ${y}`)}
+    ${box('Sonstige', countAbs('dr', y) + countAbs('su', y), 'Dienstreise & Sonderurlaub')}
+  </div>`;
+}
 function viewAntraege(){
   const {y, m} = CM; const first = new Date(y, m, 1); const days = new Date(y, m+1, 0).getDate(); const t = todayKey();
   const off = (first.getDay()+6)%7; let cells = '';
@@ -1042,7 +1060,10 @@ function viewAntraege(){
     return `<div class="req"><div class="req-ico" style="background:var(--c-${r.type})">${svg('i-cal')}</div><div class="req-body"><div class="between"><b>${a.label}</b><span class="badge st-${r.status}">${r.status}</span></div><div class="small muted num">${span} · ${fmtDays(n)} ${n===1?'Arbeitstag':'Arbeitstage'}</div>${r.note?`<div class="tiny muted">${esc(r.note)}</div>`:''}${acts}</div></div>`;
   }).join('') : '<div class="empty-state">Noch keine Anträge.</div>';
   return `
-  <div class="month-nav"><button class="icon-btn" data-cm="-1">${svg('i-chev-l')}</button><h3>${MON[m]} ${y}</h3><button class="icon-btn" data-cm="1">${svg('i-chev-r')}</button></div>
+  <h2 class="page-title">Urlaub &amp; Abwesenheit</h2>
+  <div class="small muted" style="margin:-4px 4px 12px">Urlaubsanträge, Resturlaub, Krankheitstage und alle anderen freien Tage an einem Ort.</div>
+  ${absOverview()}
+  <div class="month-nav" style="margin-top:18px"><button class="icon-btn" data-cm="-1">${svg('i-chev-l')}</button><h3>${MON[m]} ${y}</h3><button class="icon-btn" data-cm="1">${svg('i-chev-r')}</button></div>
   <div class="card">
     <div class="small muted" style="margin-bottom:4px">${svg('i-info','i ti')}Urlaub wählen: Tag antippen = ganzer Tag, nochmal = halber Tag, dritter Tipp = abwählen.</div>
     <div class="cal">${['Mo','Di','Mi','Do','Fr','Sa','So'].map(h=>`<div class="h">${h}</div>`).join('')}${cells}</div>
