@@ -383,7 +383,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
 "use strict";
 /* ============ Grundlagen ============ */
 const KEY = 'stempeluhr.v2';
-const APP_VERSION = '2.2 · 04.11.2026';
+const APP_VERSION = '2.3 · 04.11.2026';
 const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -433,7 +433,7 @@ function defaults(){
   return {
     v:2,
     settings:{ name:'Flo', soll:[0,510,510,510,510,450,0], pause:30, startDate:null, startSaldo:0,
-      urlaub:30, urlaubVorjahr:0, mariae:true, confirmBooking:false, approval:'manual', sound:true, chips:[], theme:'dark', pauseMode:'abzug', lastBackup:0 },
+      urlaub:30, urlaubVorjahr:0, mariae:true, confirmBooking:false, approval:'manual', sound:true, chips:[], theme:'dark', pauseMode:'gebucht', lastBackup:0 },
     stamps:[], requests:[], log:[], demo:false
   };
 }
@@ -444,6 +444,7 @@ function load(){
   return defaults();
 }
 let S = load();
+if (!S.settings.pauseModeSet){ S.settings.pauseMode = 'gebucht'; S.settings.pauseModeSet = true; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(_){} }
 let IDX = {}, ABSMAP = {};
 function reindex(){
   IDX = {};
@@ -500,7 +501,7 @@ function applyBreak(gross, legal){
     }
   }
   const short = ded; // fehlende Pflichtpause in Minuten
-  if (S.settings.pauseMode === 'hinweis') return {net:gross, ded:0, short, req};
+  if (S.settings.pauseMode !== 'abzug') return {net:gross, ded:0, short, req};  // Standard: nur gestempelte Pausen zählen
   return {net, ded, short, req};
 }
 function stateAfter(list){ let st = 'out'; for (const s of list) st = TARGET[s.type]; return st; }
@@ -919,7 +920,7 @@ function dayEditor(k){
   };
   sheet(`<h3>${longDate(k)}</h3>
     <div class="sub">${d.hol?esc(d.hol)+' · ':''}Soll ${dur(d.soll)} · Ist ${dur(d.ist)} · <span class="${sCls(d.diff)}">${dur(d.diff,true)}</span></div>
-    <div class="kv"><div class="muted">Anwesenheit (brutto)</div><div class="num">${dur(d.gross)}</div><div class="muted">Pause gebucht</div><div class="num">${dur(d.gaps)}</div><div class="muted">davon als Ruhepause gültig (≥ 15 Min.)</div><div class="num">${dur(d.legal)}</div><div class="muted">Pflichtabzug ArbZG</div><div class="num">${S.settings.pauseMode==='hinweis'?'aus (nur Hinweis)':dur(d.ded)}</div>${d.short&&S.settings.pauseMode==='hinweis'?`<div class="neg">Fehlende Pflichtpause</div><div class="num neg">${d.short} Min.</div>`:''}${d.restWarn!==null?`<div class="neg">Ruhezeit seit Vortag</div><div class="num neg">${dur(d.restWarn)} Std.</div>`:''}<div class="muted"><b>Netto-Ist</b></div><div class="num">${dur(d.net)}</div>${d.dgMin?`<div class="muted">davon Dienstgang</div><div class="num">${dur(d.dgMin)}</div>`:''}${d.abs?`<div class="muted">Gutschrift ${ABS[d.abs].label}</div><div class="num">${dur(d.credit)}</div>`:''}</div>
+    <div class="kv"><div class="muted">Anwesenheit (brutto)</div><div class="num">${dur(d.gross)}</div><div class="muted">Pause gebucht</div><div class="num">${dur(d.gaps)}</div><div class="muted">davon als Ruhepause gültig (≥ 15 Min.)</div><div class="num">${dur(d.legal)}</div><div class="muted">Automatischer Pausenabzug</div><div class="num">${S.settings.pauseMode==='abzug'?dur(d.ded):'aus'}</div>${d.short&&S.settings.pauseMode==='hinweis'?`<div class="neg">Fehlende Pflichtpause</div><div class="num neg">${d.short} Min.</div>`:''}${d.restWarn!==null?`<div class="neg">Ruhezeit seit Vortag</div><div class="num neg">${dur(d.restWarn)} Std.</div>`:''}<div class="muted"><b>Netto-Ist</b></div><div class="num">${dur(d.net)}</div>${d.dgMin?`<div class="muted">davon Dienstgang</div><div class="num">${dur(d.dgMin)}</div>`:''}${d.abs?`<div class="muted">Gutschrift ${ABS[d.abs].label}</div><div class="num">${dur(d.credit)}</div>`:''}</div>
     ${absE?`<div class="alert" style="cursor:default">${svg('i-cal')}<div><b>${ABS[absE.type].label}</b> ${absE.pending?'(beantragt, noch nicht genehmigt)':'(genehmigt)'}<br><span class="small">Änderungen an Fehlzeiten über den Reiter „Fehlzeiten“.</span></div></div>`:''}
     <h2 class="section" style="margin-top:18px">Buchungen</h2>
     <div id="edRows"></div>
@@ -1142,8 +1143,9 @@ function workSheet(){
     <div class="field"><label>Sollzeit pro Tag (Std:Min, ohne Pause)</label>
       <div class="soll-grid">${order.map(i=>`<label>${WD[i]}</label>`).join('')}${order.map(i=>`<input class="input num" data-soll="${i}" value="${dur(s.soll[i])}" inputmode="numeric">`).join('')}</div>
       <div class="tiny muted">Wochensoll: <b class="num" id="wSoll">${dur(s.soll.reduce((a,b)=>a+b,0))}</b></div></div>
-    <div class="field"><label>Pause pro Tag (Minuten)</label><input class="input num" id="sPause" type="number" min="0" max="120" value="${s.pause}"><div class="tiny muted">Vertraglich vereinbarte Pause. Gesetzlich (§ 4 ArbZG): bei mehr als 6 Std. Arbeit mind. 30 Min., bei mehr als 9 Std. mind. 45 Min.; als Ruhepause zählen nur Blöcke ab 15 Min.</div></div>
-    <div class="field"><label>Wenn zu wenig Pause gebucht wurde</label><div class="seg-ctl" id="sPMode"><button data-v="abzug" class="${s.pauseMode!=='hinweis'?'on':''}">Automatisch abziehen</button><button data-v="hinweis" class="${s.pauseMode==='hinweis'?'on':''}">Nur Hinweis</button></div></div>
+    <div class="field"><label>Pause pro Tag (Minuten)</label><input class="input num" id="sPause" type="number" min="0" max="120" value="${s.pause}"><div class="tiny muted">Nur für „Automatisch“ relevant. Gesetzlich (§ 4 ArbZG): bei mehr als 6 Std. Arbeit mind. 30 Min., bei mehr als 9 Std. mind. 45 Min.; als Ruhepause zählen nur Blöcke ab 15 Min.</div></div>
+    <div class="field"><label>Pausenabzug</label><div class="seg-ctl" id="sPMode"><button data-v="gebucht" class="${s.pauseMode==='gebucht'||!s.pauseMode?'on':''}">Nur gestempelt</button><button data-v="hinweis" class="${s.pauseMode==='hinweis'?'on':''}">+ Hinweis</button><button data-v="abzug" class="${s.pauseMode==='abzug'?'on':''}">Automatisch</button></div>
+      <div class="tiny muted">„Nur gestempelt“: Abgezogen wird nur, was du mit Pause / Pause Ende stempelst. „+ Hinweis“: zusätzlich Warnung bei fehlender gesetzlicher Pause. „Automatisch“: fehlende Pflichtpause wird abgezogen.</div></div>
     <div class="grid2"><div class="field"><label>Beginn Zeitkonto</label><input class="input" type="date" id="sStart" value="${s.startDate||todayKey()}"></div>
       <div class="field"><label>Startsaldo (±Std:Min)</label><input class="input num" id="sSaldo" value="${dur(s.startSaldo,true)||'0:00'}"></div></div>
     <div class="grid2"><div class="field"><label>Urlaubstage / Jahr</label><input class="input num" type="number" step="0.5" id="sUrl" value="${s.urlaub}"></div>
@@ -1158,7 +1160,7 @@ function workSheet(){
       $$('[data-soll]', el).forEach(i => { const v = parseHM(i.value||'0'); if (v===null||v<0||v>720) bad = true; else soll[+i.dataset.soll] = v; });
       const sal = parseHM($('#sSaldo',el).value||'0');
       if (bad || sal===null){ toast('Bitte Zeiten als Std:Min eingeben, z. B. 8:30'); return; }
-      const pm = $('#sPMode button.on', el)?.dataset.v || 'abzug';
+      const pm = $('#sPMode button.on', el)?.dataset.v || 'gebucht';
       Object.assign(s, {pauseMode:pm, soll, pause:+$('#sPause',el).value||0, startDate:$('#sStart',el).value||s.startDate, startSaldo:sal, urlaub:+$('#sUrl',el).value||0, urlaubVorjahr:+$('#sUrlV',el).value||0});
       log('Arbeitszeit-Einstellungen geändert'); save(); close(); render(); toast('Gespeichert ✓');
     };
