@@ -542,6 +542,8 @@ function calcDay(k, nowMs = Date.now()){
   const diff = ist - soll;
   return {k, list, hol, abs, absPending: absE && absE.pending ? absE.type : null, soll, gross, gaps, legal, ded, short, req, restWarn, net, credit, ist, diff, dgMin, st, open, missing, err, segs, isToday};
 }
+// Zählt ein Tag schon zum Zeitkonto? (erst ab dem Beginn des Zeitkontos)
+const inAccount = k => !!S.settings.startDate && k >= S.settings.startDate;
 function saldoUntil(endKeyExcl){
   let s = S.settings.startSaldo || 0;
   const start = S.settings.startDate; if (!start) return s;
@@ -873,7 +875,7 @@ function viewJournal(){
   let sSoll=0, sIst=0, sDiff=0, nU=0, nK=0; const rows = [];
   for (let i = 1; i <= days; i++){
     const k = `${y}-${pad(m+1)}-${pad(i)}`; const d = calcDay(k); const dt = fromKey(k); const we = !isWorkday(k) && !d.list.length; const fut = k > t;
-    if (!fut || d.abs){ sSoll += d.soll; sIst += d.ist; sDiff += d.diff; }
+    if ((!fut || d.abs) && inAccount(k)){ sSoll += d.soll; sIst += d.ist; sDiff += d.diff; }
     if (d.abs==='u') nU++; if (d.abs==='hu') nU+=.5; if (d.abs==='k') nK++;
     const ins = d.list.filter(s=>s.type==='in'), outs = d.list.filter(s=>s.type==='out');
     let main = '';
@@ -886,7 +888,7 @@ function viewJournal(){
     if (S.settings.pauseMode==='hinweis' && d.short > 0 && !d.open) main += `<span class="badge err">Pause −${d.short} Min.</span>`;
     if (d.net > 600) main += `<span class="badge err">&gt; 10 Std.</span>`;
     if (!main) main = we ? '<span class="muted tiny">frei</span>' : fut ? `<span class="muted tiny">Soll ${dur(d.soll)}</span>` : (S.settings.startDate && k >= S.settings.startDate ? '<span class="badge err">keine Buchung</span>' : '<span class="muted tiny">–</span>');
-    const right = (fut && !d.abs) || (we && !d.ist) ? '' : `<b class="num">${dur(d.ist)}</b><span class="num tiny ${sCls(d.diff)}">${dur(d.diff,true)}</span>`;
+    const right = (fut && !d.abs) || (we && !d.ist) || (!inAccount(k) && !d.list.length) ? '' : `<b class="num">${dur(d.ist)}</b><span class="num tiny ${sCls(d.diff)}">${dur(d.diff,true)}</span>`;
     rows.push(`<div class="day ${we?'we':''} ${k===t?'today':''} ${fut?'future':''}" data-open-day="${k}"><div class="d-date"><b class="num">${pad(i)}</b><span>${WD[dt.getDay()]}</span></div><div class="d-main">${main}</div><div class="d-right">${right}</div></div>`);
   }
   const endKey = `${y}-${pad(m+1)}-${pad(days)}`; const endEx = addDays(endKey,1) > t ? t : addDays(endKey,1);
@@ -951,12 +953,12 @@ function dayEditor(k){
 function viewKonten(){
   const sal = saldoNow(); const vac = vacation(); const y = new Date().getFullYear(); const t = todayKey();
   const mStart = t.slice(0,8) + '01'; let mDiff = 0, mIst = 0, mSoll = 0;
-  for (let k = mStart; k < t; k = addDays(k,1)){ const d = calcDay(k); mDiff += d.diff; mIst += d.ist; mSoll += d.soll; }
+  for (let k = mStart; k < t; k = addDays(k,1)){ if (!inAccount(k)) continue; const d = calcDay(k); mDiff += d.diff; mIst += d.ist; mSoll += d.soll; }
   const vacPct = vac.claim ? Math.max(0, Math.min(1, (vac.taken+vac.planned)/vac.claim)) : 0;
   const C = 2*Math.PI*36;
   // Saldoverlauf letzte 8 Wochen
   const pts = []; let s0 = null;
-  for (let i = 55; i >= 0; i--){ const k = addDays(t, -i); if (S.settings.startDate && k < S.settings.startDate) continue; if (s0===null) s0 = saldoUntil(k); else s0 += calcDay(addDays(k,-1)).diff; pts.push(s0); }
+  for (let i = 55; i >= 0 && S.settings.startDate; i--){ const k = addDays(t, -i); if (k < S.settings.startDate) continue; if (s0===null) s0 = saldoUntil(k); else s0 += calcDay(addDays(k,-1)).diff; pts.push(s0); }
   let spark = '';
   if (pts.length > 2){
     const mn = Math.min(0,...pts), mx = Math.max(0,...pts), rg = (mx-mn)||1, W = 300, H = 70;
@@ -1292,7 +1294,7 @@ function exportCSV(){
 function exportPDF(){
   const {y, m} = JM; const rows = monthRows(y, m); const t = todayKey();
   let sS=0, sI=0, sD=0;
-  const tr = rows.map(r => { const fut = r.k > t && !r.d.abs; if(!fut){ sS+=r.d.soll; sI+=r.d.ist; sD+=r.d.diff; }
+  const tr = rows.map(r => { const fut = r.k > t && !r.d.abs; if(!fut && inAccount(r.k)){ sS+=r.d.soll; sI+=r.d.ist; sD+=r.d.diff; }
     const we = !isWorkday(r.k) && !r.d.list.length;
     return `<tr class="${we?'we':''}"><td>${r.wd} ${shortDate(r.k).slice(0,6)}</td><td>${r.kommen}</td><td>${r.gehen}</td><td class="r">${fut||we?'':dur(r.d.gaps+r.d.ded)}</td><td class="r">${fut||(we&&!r.d.ist)?'':dur(r.d.ist)}</td><td class="r">${dur(r.d.soll)}</td><td class="r">${fut||(we&&!r.d.ist)?'':dur(r.d.diff,true)}</td><td>${esc(r.bem)}</td></tr>`; }).join('');
   const endKey = `${y}-${pad(m+1)}-${pad(rows.length)}`; const endEx = addDays(endKey,1) > t ? t : addDays(endKey,1);
