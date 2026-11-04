@@ -206,7 +206,7 @@ svg.ti{width:12px;height:12px;vertical-align:-1px;margin-right:3px}
 .cal .c.empty{background:transparent;cursor:default}
 .cal .c.we{color:var(--muted);background:transparent}
 .cal .c.today{outline:2px solid var(--accent);outline-offset:-2px;font-weight:700}
-.cal .c .code{font-size:9.5px;font-weight:800;letter-spacing:.03em;margin-top:1px}
+.cal .c .code{font-size:8.5px;font-weight:700;line-height:1.05;margin-top:2px;text-align:center;hyphens:manual;max-width:100%;padding:0 2px;overflow-wrap:anywhere}
 .cal .c.a-u{background:var(--c-u);color:#fff}.cal .c.a-hu{background:linear-gradient(135deg,var(--c-hu) 50%,var(--surface-2) 50%)}
 .cal .c.a-k{background:var(--c-k);color:#fff}.cal .c.a-gt{background:var(--c-gt);color:#fff}
 .cal .c.a-dr{background:var(--c-dr);color:#fff}.cal .c.a-su{background:var(--c-su);color:#fff}
@@ -216,6 +216,12 @@ svg.ti{width:12px;height:12px;vertical-align:-1px;margin-right:3px}
 .cal .c.sel-half{background:linear-gradient(135deg,var(--c-u) 50%,var(--surface-2) 50%);box-shadow:inset 0 0 0 2px var(--c-u)}
 .cal .c.sel .code,.cal .c.sel-half .code{color:inherit}
 .selbar{margin-top:12px;border:1px solid color-mix(in srgb,var(--c-u) 45%,transparent);background:color-mix(in srgb,var(--c-u) 10%,var(--surface))}
+.type-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.type-opt{display:flex;gap:10px;align-items:flex-start;text-align:left;border:1px solid var(--line);background:var(--surface-2);border-radius:12px;padding:10px 11px;cursor:pointer}
+.type-opt i{width:12px;height:12px;border-radius:4px;flex:none;margin-top:4px}
+.type-opt b{display:block;font-size:14px;font-weight:600}
+.type-opt small{display:block;font-size:11.5px;color:var(--muted);line-height:1.3;margin-top:1px}
+.type-opt.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft);background:var(--surface)}
 .mail-prev{white-space:pre-wrap;font-size:14px;line-height:1.55;min-height:300px;resize:vertical}
 .cal .c.pending::after{content:"";position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
 .legend{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:12px;font-size:12px;color:var(--muted)}
@@ -379,7 +385,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
   <button data-tab="buchen"><span class="pill"><svg><use href="#i-clock"/></svg></span>Buchen</button>
   <button data-tab="journal"><span class="pill"><svg><use href="#i-journal"/></svg></span>Journal</button>
   <button data-tab="konten"><span class="pill"><svg><use href="#i-acc"/></svg></span>Konten</button>
-  <button data-tab="antraege"><span class="pill"><svg><use href="#i-cal"/></svg></span>Fehlzeiten</button>
+  <button data-tab="antraege"><span class="pill"><svg><use href="#i-cal"/></svg></span>Abwesenheit</button>
   <button data-tab="mehr"><span class="pill"><svg><use href="#i-more"/></svg></span>Mehr</button>
 </div></nav>
 
@@ -391,7 +397,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
 "use strict";
 /* ============ Grundlagen ============ */
 const KEY = 'stempeluhr.v2';
-const APP_VERSION = '2.7 · 04.11.2026';
+const APP_VERSION = '2.8 · 04.11.2026';
 const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -403,12 +409,12 @@ const KIND = {
 const TARGET = {in:'in', out:'out', ps:'pause', pe:'in', ds:'dg', de:'in'};
 const ALLOWED = { out:['in','ds'], in:['out','ps','ds'], pause:['pe','out'], dg:['de','out'] };
 const ABS = {
-  u:{code:'U', label:'Urlaub', credit:1, vac:1},
-  hu:{code:'½U', label:'Halber Urlaubstag', credit:.5, vac:.5},
-  k:{code:'K', label:'Krank', credit:1},
-  gt:{code:'GT', label:'Gleittag', credit:0},
-  dr:{code:'DR', label:'Dienstreise', credit:1},
-  su:{code:'SU', label:'Sonderurlaub', credit:1}
+  u:{cell:'Urlaub', label:'Urlaub', desc:'Ganzer Urlaubstag', credit:1, vac:1},
+  hu:{cell:'½ Urlaub', label:'Halber Urlaubstag', desc:'Nur ein halber Tag frei', credit:.5, vac:.5},
+  k:{cell:'Krank', label:'Krank', desc:'Arbeitsunfähig, z. B. mit Krankmeldung', credit:1},
+  gt:{cell:'Gleit­tag', label:'Gleittag', desc:'Freier Tag aus Überstunden', credit:0},
+  dr:{cell:'Dienst­reise', label:'Dienstreise', desc:'Ganztägig beruflich unterwegs', credit:1},
+  su:{cell:'Sonder­urlaub', label:'Sonderurlaub', desc:'z. B. Hochzeit, Umzug, Todesfall', credit:1}
 };
 const SRC = {nfc:'NFC-Chip', chip:'Chip', app:'App', korr:'Korrektur', demo:'Demo'};
 
@@ -652,7 +658,7 @@ function showConfirm(kind, o){
     ${isWarn ? '' : `<div class="c-stats">
       <div>Heute<b class="num">${dur(d.net)}</b></div>
       <div>Gleitzeit<b class="num">${dur(sal.incl,true)}</b></div>
-      <div>Resturlaub<b class="num">${fmtDays(vac.rest)} T</b></div></div>`}
+      <div>Resturlaub<b class="num">${fmtDays(vac.rest)} Tage</b></div></div>`}
     ${o.undoId ? `<button class="c-undo" id="cUndo">${svg('i-x')}<span>Rückgängig (<span class="num" data-u>10</span>)</span></button>` : ''}
     <div class="c-hint">Tippen zum Schließen</div>`;
   if (o.undoId){ startUndo(o.undoId, kind); $('#cUndo').onclick = e => { e.stopPropagation(); undoBooking(o.undoId); }; }
@@ -899,9 +905,9 @@ function viewJournal(){
     const ins = d.list.filter(s=>s.type==='in'), outs = d.list.filter(s=>s.type==='out');
     let main = '';
     if (d.hol) main += `<span class="badge hol">${esc(d.hol)}</span>`;
-    if (d.abs) main += `<span class="badge ${d.abs}">${ABS[d.abs].code} ${ABS[d.abs].label}</span>`;
-    if (d.absPending) main += `<span class="badge st-beantragt">${ABS[d.absPending].code} beantragt</span>`;
-    if (d.list.length) main += `<div class="t num">${ins[0]?hm(ins[0].ts):'?'} – ${outs.length?hm(outs[outs.length-1].ts):(d.open?'jetzt':'?')}${d.gaps+d.ded?` <span class="muted tiny">· P ${dur(d.gaps+d.ded)}</span>`:''}</div>`;
+    if (d.abs) main += `<span class="badge ${d.abs}">${ABS[d.abs].label}</span>`;
+    if (d.absPending) main += `<span class="badge st-beantragt">${ABS[d.absPending].label} beantragt</span>`;
+    if (d.list.length) main += `<div class="t num">${ins[0]?hm(ins[0].ts):'?'} – ${outs.length?hm(outs[outs.length-1].ts):(d.open?'jetzt':'?')}${d.gaps+d.ded?` <span class="muted tiny">· Pause ${dur(d.gaps+d.ded)}</span>`:''}</div>`;
     if (d.missing || d.err) main += `<span class="badge err">${svg('i-warn','i')} Buchung fehlt</span>`;
     if (d.restWarn !== null) main += `<span class="badge err">Ruhezeit ${dur(d.restWarn)}</span>`;
     if (S.settings.pauseMode==='hinweis' && d.short > 0 && !d.open) main += `<span class="badge err">Pause −${d.short} Min.</span>`;
@@ -936,13 +942,13 @@ function dayEditor(k){
   sheet(`<h3>${longDate(k)}</h3>
     <div class="sub">${d.hol?esc(d.hol)+' · ':''}Soll ${dur(d.soll)} · Ist ${dur(d.ist)} · <span class="${sCls(d.diff)}">${dur(d.diff,true)}</span></div>
     <div class="kv"><div class="muted">Anwesenheit (brutto)</div><div class="num">${dur(d.gross)}</div><div class="muted">Pause gebucht</div><div class="num">${dur(d.gaps)}</div><div class="muted">davon als Ruhepause gültig (≥ 15 Min.)</div><div class="num">${dur(d.legal)}</div><div class="muted">Automatischer Pausenabzug</div><div class="num">${S.settings.pauseMode==='abzug'?dur(d.ded):'aus'}</div>${d.short&&S.settings.pauseMode==='hinweis'?`<div class="neg">Fehlende Pflichtpause</div><div class="num neg">${d.short} Min.</div>`:''}${d.restWarn!==null?`<div class="neg">Ruhezeit seit Vortag</div><div class="num neg">${dur(d.restWarn)} Std.</div>`:''}<div class="muted"><b>Netto-Ist</b></div><div class="num">${dur(d.net)}</div>${d.dgMin?`<div class="muted">davon Dienstgang</div><div class="num">${dur(d.dgMin)}</div>`:''}${d.abs?`<div class="muted">Gutschrift ${ABS[d.abs].label}</div><div class="num">${dur(d.credit)}</div>`:''}</div>
-    ${absE?`<div class="alert" style="cursor:default">${svg('i-cal')}<div><b>${ABS[absE.type].label}</b> ${absE.pending?'(beantragt, noch nicht genehmigt)':'(genehmigt)'}<br><span class="small">Änderungen an Fehlzeiten über den Reiter „Fehlzeiten“.</span></div></div>`:''}
+    ${absE?`<div class="alert" style="cursor:default">${svg('i-cal')}<div><b>${ABS[absE.type].label}</b> ${absE.pending?'(beantragt, noch nicht genehmigt)':'(genehmigt)'}<br><span class="small">Ändern kannst du das im Reiter „Abwesenheit“.</span></div></div>`:''}
     <h2 class="section" style="margin-top:18px">Buchungen</h2>
     <div id="edRows"></div>
     <button class="btn block" id="edAdd" style="margin-top:10px">${svg('i-plus')} Buchung hinzufügen</button>
     <div class="field"><label>Grund der Korrektur</label><input class="input" id="edWhy" placeholder="z. B. Stempeln vergessen"></div>
     <div class="actions"><button class="btn grow" data-x>Abbrechen</button><button class="btn grow primary" id="edSave">Speichern</button></div>
-    ${!absE && isWorkday(k) ? `<button class="btn block" id="edAbs" style="margin-top:10px">${svg('i-cal')} Fehlzeit für diesen Tag beantragen</button>`:''}`,
+    ${!absE && isWorkday(k) ? `<button class="btn block" id="edAbs" style="margin-top:10px">${svg('i-cal')} Abwesenheit für diesen Tag eintragen</button>`:''}`,
   (el, close) => {
     drawRows(el);
     $('[data-x]', el).onclick = close;
@@ -1009,9 +1015,9 @@ function viewKonten(){
       <div class="acc-row"><span>Beantragt (offen)</span><b class="num">${fmtDays(vac.requested)}</b></div>
     </div>
   </div>
-  <h2 class="section">Fehlzeiten ${y}</h2>
+  <h2 class="section">Abwesenheiten ${y}</h2>
   <div class="card"><div class="acc">
-    ${['k','gt','dr','su'].map(t=>`<div class="acc-row"><span><span class="badge ${t}">${ABS[t].code}</span> ${ABS[t].label}</span><b class="num">${countAbs(t,y)} Tage</b></div>`).join('')}
+    ${['k','gt','dr','su'].map(t=>`<div class="acc-row"><span><span class="badge ${t}">${ABS[t].label}</span></span><b class="num">${countAbs(t,y)} Tage</b></div>`).join('')}
   </div></div>`;
 }
 
@@ -1023,7 +1029,7 @@ function viewAntraege(){
     const k = `${y}-${pad(m+1)}-${pad(i)}`; const a = ABSMAP[k]; const hol = holidayOf(k); const we = sollBase(k)===0;
     const sv = VSEL[k];
     const cls = ['c', we?'we':'', hol?'hol':'', a?'a-'+a.type:'', a&&a.pending?'pending':'', k===t?'today':'', sv===1?'sel':sv===.5?'sel-half':''].join(' ');
-    cells += `<div class="${cls}" data-cal="${k}" title="${esc(hol||'')}"><span class="num">${i}</span>${a?`<span class="code">${ABS[a.type].code}</span>`:hol?'<span class="code">FT</span>':sv?`<span class="code">${sv===1?'U':'½U'}</span>`:''}</div>`;
+    cells += `<div class="${cls}" data-cal="${k}" title="${esc(hol||'')}"><span class="num">${i}</span>${a?`<span class="code">${ABS[a.type].cell}</span>`:hol?`<span class="code">Feier${'\u00ad'}tag</span>`:sv?`<span class="code">${sv===1?'Urlaub':'½ Urlaub'}</span>`:''}</div>`;
   }
   const reqs = S.requests.slice().sort((a,b)=>b.created-a.created);
   const list = reqs.length ? reqs.map(r => {
@@ -1033,7 +1039,7 @@ function viewAntraege(){
     let acts = '';
     if (r.status==='beantragt') acts = `<div class="req-actions">${S.settings.approval==='manual'?`<button class="btn" data-approve="${r.id}">${svg('i-check')} Genehmigen</button><button class="btn danger" data-reject="${r.id}">${svg('i-x')} Ablehnen</button>`:''}<button class="btn" data-storno="${r.id}">Zurückziehen</button></div>`;
     else if (r.status==='genehmigt' && r.to >= t) acts = `<div class="req-actions"><button class="btn" data-storno="${r.id}">Stornieren</button></div>`;
-    return `<div class="req"><div class="req-ico" style="background:var(--c-${r.type})">${a.code}</div><div class="req-body"><div class="between"><b>${a.label}</b><span class="badge st-${r.status}">${r.status}</span></div><div class="small muted num">${span} · ${fmtDays(n)} ${n===1?'Arbeitstag':'Arbeitstage'}</div>${r.note?`<div class="tiny muted">${esc(r.note)}</div>`:''}${acts}</div></div>`;
+    return `<div class="req"><div class="req-ico" style="background:var(--c-${r.type})">${svg('i-cal')}</div><div class="req-body"><div class="between"><b>${a.label}</b><span class="badge st-${r.status}">${r.status}</span></div><div class="small muted num">${span} · ${fmtDays(n)} ${n===1?'Arbeitstag':'Arbeitstage'}</div>${r.note?`<div class="tiny muted">${esc(r.note)}</div>`:''}${acts}</div></div>`;
   }).join('') : '<div class="empty-state">Noch keine Anträge.</div>';
   return `
   <div class="month-nav"><button class="icon-btn" data-cm="-1">${svg('i-chev-l')}</button><h3>${MON[m]} ${y}</h3><button class="icon-btn" data-cm="1">${svg('i-chev-r')}</button></div>
@@ -1043,16 +1049,16 @@ function viewAntraege(){
     <div class="legend">${Object.keys(ABS).map(t=>`<span><i style="background:var(--c-${t})"></i>${ABS[t].label}</span>`).join('')}<span><i style="border:1px dashed var(--c-hol)"></i>Feiertag</span><span><i style="background:var(--warn);border-radius:50%"></i>beantragt</span></div>
   </div>
   ${selBar()}
-  <button class="btn ${Object.keys(VSEL).length?'':'primary'} block" id="newReq" style="margin-top:12px;padding:14px">${svg('i-plus')} Andere Fehlzeit eintragen</button>
+  <button class="btn ${Object.keys(VSEL).length?'':'primary'} block" id="newReq" style="margin-top:12px;padding:14px">${svg('i-plus')} Krank, Gleittag & Sonstiges eintragen</button>
   <h2 class="section">Anträge & Workflow</h2>
   <div class="card">${list}</div>
   ${S.settings.approval==='manual'?'<p class="tiny muted" style="margin:10px 4px">Demo-Workflow: Die Genehmigung durch den Vorgesetzten wird hier simuliert. Im Firmensystem landet der Antrag beim Vorgesetzten bzw. bei HR.</p>':''}`;
 }
 function requestEditor(pre={}){
   const t = todayKey(); let type = pre.type || 'u';
-  sheet(`<h3>Fehlzeit beantragen</h3><div class="sub">Der Antrag wird zur Genehmigung weitergeleitet.</div>
-    <div class="field"><label>Art</label><div class="seg-ctl" id="rqType">${Object.keys(ABS).map(k=>`<button data-t="${k}" class="${k===type?'on':''}">${ABS[k].code}</button>`).join('')}</div><div class="small muted" id="rqTypeL">${ABS[type].label}</div></div>
-    <div class="grid2"><div class="field"><label>Von</label><input class="input" type="date" id="rqFrom" value="${pre.from||t}"></div><div class="field"><label>Bis</label><input class="input" type="date" id="rqTo" value="${pre.to||pre.from||t}"></div></div>
+  sheet(`<h3>Abwesenheit eintragen</h3><div class="sub">Wähle aus, warum du nicht da bist, und für welche Tage.</div>
+    <div class="field"><label>Grund der Abwesenheit</label><div class="type-grid" id="rqType">${Object.keys(ABS).map(k=>`<button data-t="${k}" class="type-opt ${k===type?'on':''}"><i style="background:var(--c-${k})"></i><span><b>${ABS[k].label}</b><small>${ABS[k].desc}</small></span></button>`).join('')}</div></div>
+    <div class="grid2"><div class="field"><label>Erster Tag</label><input class="input" type="date" id="rqFrom" value="${pre.from||t}"></div><div class="field"><label>Letzter Tag</label><input class="input" type="date" id="rqTo" value="${pre.to||pre.from||t}"></div></div>
     <div class="field"><label>Bemerkung</label><input class="input" id="rqNote" placeholder="optional"></div>
     <div class="card" style="margin-top:14px;box-shadow:none;padding:12px 14px"><div class="between small"><span class="muted">Arbeitstage</span><b class="num" id="rqDays"></b></div><div class="between small" id="rqVacRow"><span class="muted">Resturlaub danach</span><b class="num" id="rqRest"></b></div></div>
     <div class="actions"><button class="btn grow" data-x>Abbrechen</button><button class="btn grow primary" id="rqSend">Beantragen</button></div>`,
@@ -1064,7 +1070,6 @@ function requestEditor(pre={}){
       $('#rqDays',el).textContent = fmtDays(n);
       $('#rqVacRow',el).style.display = ABS[type].vac ? '' : 'none';
       $('#rqRest',el).textContent = fmtDays(vacation().rest - n) + ' Tage';
-      $('#rqTypeL',el).textContent = ABS[type].label;
     };
     $$('#rqType button', el).forEach(b => b.onclick = () => { type = b.dataset.t; $$('#rqType button', el).forEach(x=>x.classList.toggle('on', x===b)); upd(); });
     $('#rqFrom',el).onchange = () => { if ($('#rqTo',el).value < $('#rqFrom',el).value) $('#rqTo',el).value = $('#rqFrom',el).value; upd(); };
@@ -1107,12 +1112,12 @@ function selBar(){
   const total = rs.reduce((a,r)=>a+r.days,0);
   return `<div class="card selbar"><div class="stat-label">Urlaub ausgewählt</div>
     <div style="font-size:20px;font-weight:700;margin:2px 0 6px">${fmtDays(total)} ${total===1?'Urlaubstag':'Urlaubstage'}</div>
-    <div class="small muted">${rs.map(r => esc(r.from===r.to ? shortDate(r.from) + (r.half?' (½)':'') : shortDate(r.from)+' – '+shortDate(r.to))).join(' · ')}</div>
+    <div class="small muted">${rs.map(r => esc(r.from===r.to ? shortDate(r.from) + (r.half?' (halber Tag)':'') : shortDate(r.from)+' – '+shortDate(r.to))).join(' · ')}</div>
     <div class="actions"><button class="btn grow" id="selClear">${svg('i-x')} Auswahl aufheben</button><button class="btn grow primary" id="selMail">${svg('i-check')} Urlaubsantrag erstellen</button></div></div>`;
 }
 function vacMailSubject(rs){
   const n = (S.settings.name||'').trim();
-  const span = rs.map(r => r.from===r.to ? dm(r.from) + (r.half?' (½)':'') : `${dm(r.from)}–${dm(r.to)}`).join(', ');
+  const span = rs.map(r => r.from===r.to ? dm(r.from) + (r.half?' (halber Tag)':'') : `${dm(r.from)}–${dm(r.to)}`).join(', ');
   return `Urlaubsantrag${n ? ' ' + n : ''}: ${span}`;
 }
 const dm = k => { const d = fromKey(k); return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.`; };
@@ -1557,7 +1562,7 @@ function bindView(){
   $('#newReq', v) && ($('#newReq', v).onclick = () => requestEditor());
   $$('[data-approve]', v).forEach(b => b.onclick = () => setReq(b.dataset.approve, 'genehmigt'));
   $$('[data-reject]', v).forEach(b => b.onclick = () => setReq(b.dataset.reject, 'abgelehnt'));
-  $$('[data-storno]', v).forEach(b => b.onclick = async () => { const ok = await dialog('Antrag stornieren?', 'Die Fehlzeit wird wieder entfernt.', [{label:'Nein'},{label:'Stornieren', danger:true, value:true}]); if (ok) setReq(b.dataset.storno, 'storniert'); });
+  $$('[data-storno]', v).forEach(b => b.onclick = async () => { const ok = await dialog('Antrag stornieren?', 'Die Abwesenheit wird wieder aus dem Kalender entfernt.', [{label:'Nein'},{label:'Stornieren', danger:true, value:true}]); if (ok) setReq(b.dataset.storno, 'storniert'); });
   $('#csvBtn', v) && ($('#csvBtn', v).onclick = exportCSV);
   $('#pdfBtn', v) && ($('#pdfBtn', v).onclick = exportPDF);
   $$('[data-backup]', v).forEach(b => b.onclick = saveBackup);
