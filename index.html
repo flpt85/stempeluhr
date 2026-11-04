@@ -228,6 +228,10 @@ svg.ti{width:12px;height:12px;vertical-align:-1px;margin-right:3px}
 .ov-v{font-size:22px;font-weight:700;margin-top:2px}
 .ov-grid .stat-label{font-size:10.5px}
 .ov-grid .stat-sub{font-size:11px;line-height:1.25}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface-2);border-radius:99px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink-2)}
+.chip i{width:9px;height:9px;border-radius:50%;flex:none}
+.chip.on{border-color:var(--accent);background:var(--accent-soft);color:var(--ink)}
 .mail-prev{white-space:pre-wrap;font-size:14px;line-height:1.55;min-height:300px;resize:vertical}
 .cal .c.pending::after{content:"";position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
 .legend{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:12px;font-size:12px;color:var(--muted)}
@@ -403,7 +407,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
 "use strict";
 /* ============ Grundlagen ============ */
 const KEY = 'stempeluhr.v2';
-const APP_VERSION = '2.9 · 04.11.2026';
+const APP_VERSION = '3.0 · 04.11.2026';
 const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -1076,37 +1080,65 @@ function viewAntraege(){
   ${S.settings.approval==='manual'?'<p class="tiny muted" style="margin:10px 4px">Demo-Workflow: Die Genehmigung durch den Vorgesetzten wird hier simuliert. Im Firmensystem landet der Antrag beim Vorgesetzten bzw. bei HR.</p>':''}`;
 }
 function requestEditor(pre={}){
-  const t = todayKey(); let type = pre.type || 'u';
-  sheet(`<h3>Abwesenheit eintragen</h3><div class="sub">Wähle aus, warum du nicht da bist, und für welche Tage.</div>
-    <div class="field"><label>Grund der Abwesenheit</label><div class="type-grid" id="rqType">${Object.keys(ABS).map(k=>`<button data-t="${k}" class="type-opt ${k===type?'on':''}"><i style="background:var(--c-${k})"></i><span><b>${ABS[k].label}</b><small>${ABS[k].desc}</small></span></button>`).join('')}</div></div>
-    <div class="grid2"><div class="field"><label>Erster Tag</label><input class="input" type="date" id="rqFrom" value="${pre.from||t}"></div><div class="field"><label>Letzter Tag</label><input class="input" type="date" id="rqTo" value="${pre.to||pre.from||t}"></div></div>
-    <div class="field"><label>Bemerkung</label><input class="input" id="rqNote" placeholder="optional"></div>
-    <div class="card" style="margin-top:14px;box-shadow:none;padding:12px 14px"><div class="between small"><span class="muted">Arbeitstage</span><b class="num" id="rqDays"></b></div><div class="between small" id="rqVacRow"><span class="muted">Resturlaub danach</span><b class="num" id="rqRest"></b></div></div>
-    <div class="actions"><button class="btn grow" data-x>Abbrechen</button><button class="btn grow primary" id="rqSend">Beantragen</button></div>`,
+  const t = todayKey();
+  let type = pre.type && pre.type !== 'hu' ? pre.type : 'u';
+  const sel = {}; if (pre.from && isWorkday(pre.from) && !ABSMAP[pre.from]) sel[pre.from] = 1;
+  const start = fromKey(pre.from || t); let cy = start.getFullYear(), cm = start.getMonth();
+  const TYPES = ['u','k','gt','dr','su'];
+  sheet(`<h3>Abwesenheit eintragen</h3>
+    <div class="chips" id="rqType">${TYPES.map(k=>`<button data-t="${k}" class="chip ${k===type?'on':''}"><i style="background:var(--c-${k})"></i>${ABS[k].label}</button>`).join('')}</div>
+    <div class="small muted" id="rqDesc" style="margin:8px 2px 0"></div>
+    <div class="month-nav" style="margin:14px 0 6px"><button class="icon-btn" data-rm="-1">${svg('i-chev-l')}</button><h3 id="rqMon" style="font-size:17px"></h3><button class="icon-btn" data-rm="1">${svg('i-chev-r')}</button></div>
+    <div class="cal" id="rqCal"></div>
+    <div class="card" style="margin-top:12px;box-shadow:none;padding:12px 14px" id="rqSum"></div>
+    <div class="field"><label>Bemerkung (optional)</label><input class="input" id="rqNote" placeholder="z. B. Arzttermin, Hochzeit …"></div>
+    <div class="actions"><button class="btn grow" data-x>Abbrechen</button><button class="btn grow primary" id="rqSend">Eintragen</button></div>`,
   (el, close) => {
-    const upd = () => {
-      const f = $('#rqFrom',el).value, to = $('#rqTo',el).value;
-      if (type==='hu') $('#rqTo',el).value = f;
-      const n = f && to && to >= f ? workdaysIn(f, type==='hu'?f:to, type) : 0;
-      $('#rqDays',el).textContent = fmtDays(n);
-      $('#rqVacRow',el).style.display = ABS[type].vac ? '' : 'none';
-      $('#rqRest',el).textContent = fmtDays(vacation().rest - n) + ' Tage';
+    const draw = () => {
+      $('#rqDesc', el).textContent = type === 'u' ? 'Tage antippen: einmal = ganzer Tag, zweimal = halber Tag, dreimal = abwählen.' : `${ABS[type].desc}. Tage antippen zum Auswählen, nochmal zum Abwählen.`;
+      $('#rqMon', el).textContent = `${MON[cm]} ${cy}`;
+      const days = new Date(cy, cm+1, 0).getDate(); const off = (new Date(cy, cm, 1).getDay()+6)%7;
+      let h = ['Mo','Di','Mi','Do','Fr','Sa','So'].map(x=>`<div class="h">${x}</div>`).join('');
+      for (let i = 0; i < off; i++) h += '<div class="c empty"></div>';
+      for (let i = 1; i <= days; i++){
+        const k = `${cy}-${pad(cm+1)}-${pad(i)}`; const a = ABSMAP[k]; const hol = holidayOf(k); const we = sollBase(k)===0; const sv = sel[k];
+        const cls = ['c', we?'we':'', hol?'hol':'', a?'a-'+a.type:'', a&&a.pending?'pending':'', k===t?'today':'', sv ? (sv===.5?'sel-half':'sel') : ''].join(' ');
+        const lab = a ? ABS[a.type].cell : hol ? `Feier­tag` : sv ? (sv===.5 ? '½ Urlaub' : ABS[type].cell) : '';
+        h += `<div class="${cls}" data-k="${k}" ${sv && sv!==.5 ? `style="background:var(--c-${type})"` : ''}><span class="num">${i}</span>${lab?`<span class="code">${lab}</span>`:''}</div>`;
+      }
+      $('#rqCal', el).innerHTML = h;
+      $$('#rqCal [data-k]', el).forEach(c => c.onclick = () => {
+        const k = c.dataset.k;
+        if (ABSMAP[k]){ toast(`Schon eingetragen: ${ABS[ABSMAP[k].type].label}`); return; }
+        if (!isWorkday(k)){ toast(holidayOf(k) || 'Kein Arbeitstag'); return; }
+        const cur = sel[k];
+        if (!cur) sel[k] = 1; else if (cur === 1 && type === 'u') sel[k] = .5; else delete sel[k];
+        draw();
+      });
+      const rs = vacRanges(sel); const total = rs.reduce((a,r)=>a+r.days,0);
+      $('#rqSum', el).innerHTML = rs.length
+        ? `<div class="between small"><span class="muted">${ABS[type].label}</span><b class="num">${fmtDays(total)} ${total===1?'Arbeitstag':'Arbeitstage'}</b></div>
+           <div class="small" style="margin-top:4px">${rs.map(r=>esc(rangeText(r))).join('<br>')}</div>
+           ${ABS[type].vac ? `<div class="between small" style="margin-top:6px"><span class="muted">Resturlaub danach</span><b class="num">${fmtDays(vacation().rest - total)} Tage</b></div>` : ''}`
+        : '<div class="small muted">Noch keine Tage ausgewählt.</div>';
+      $('#rqSend', el).textContent = type === 'u' ? 'Weiter zum Urlaubsantrag' : 'Eintragen';
     };
-    $$('#rqType button', el).forEach(b => b.onclick = () => { type = b.dataset.t; $$('#rqType button', el).forEach(x=>x.classList.toggle('on', x===b)); upd(); });
-    $('#rqFrom',el).onchange = () => { if ($('#rqTo',el).value < $('#rqFrom',el).value) $('#rqTo',el).value = $('#rqFrom',el).value; upd(); };
-    $('#rqTo',el).onchange = upd; upd();
-    $('[data-x]',el).onclick = close;
-    $('#rqSend',el).onclick = () => {
-      const from = $('#rqFrom',el).value; let to = type==='hu' ? from : $('#rqTo',el).value;
-      if (!from || !to || to < from){ toast('Bitte einen gültigen Zeitraum wählen'); return; }
-      if (!workdaysIn(from,to,type)){ toast('Im Zeitraum liegt kein Arbeitstag'); return; }
-      const clash = S.requests.find(r => r.kind==='abs' && ['beantragt','genehmigt'].includes(r.status) && !(r.to < from || r.from > to));
-      if (clash){ toast('Für diesen Zeitraum gibt es schon einen Antrag'); return; }
-      const r = {id:uid(), kind:'abs', type, from, to, note:$('#rqNote',el).value.trim(), status: S.settings.approval==='auto'?'genehmigt':'beantragt', created:Date.now()};
-      if (r.status==='genehmigt') r.decided = Date.now();
-      S.requests.unshift(r); log(`Antrag ${ABS[type].label} ${shortDate(from)}–${shortDate(to)} gestellt`);
-      save(); close(); TAB='antraege'; render(); toast(r.status==='genehmigt'?'Antrag eingetragen ✓':'Antrag gestellt – wartet auf Genehmigung');
+    $$('#rqType button', el).forEach(b => b.onclick = () => {
+      type = b.dataset.t; $$('#rqType button', el).forEach(x=>x.classList.toggle('on', x===b));
+      if (type !== 'u') for (const k in sel) if (sel[k] === .5) sel[k] = 1;
+      draw();
+    });
+    $$('[data-rm]', el).forEach(b => b.onclick = () => { cm += +b.dataset.rm; if (cm<0){cm=11;cy--;} if (cm>11){cm=0;cy++;} draw(); });
+    $('[data-x]', el).onclick = close;
+    $('#rqSend', el).onclick = () => {
+      const rs = vacRanges(sel); if (!rs.length){ toast('Bitte mindestens einen Tag im Kalender antippen'); return; }
+      if (type === 'u'){ VSEL = {...sel}; close(); setTimeout(vacationMail, 240); return; }
+      const note = $('#rqNote', el).value.trim(); const st = S.settings.approval==='auto' ? 'genehmigt' : 'beantragt';
+      for (const r of rs){ const q = {id:uid(), kind:'abs', type, from:r.from, to:r.to, note, status:st, created:Date.now()}; if (st==='genehmigt') q.decided = Date.now(); S.requests.unshift(q); }
+      log(`${ABS[type].label} eingetragen: ${rs.map(r=>r.from===r.to?shortDate(r.from):shortDate(r.from)+'–'+shortDate(r.to)).join(', ')}`);
+      save(); close(); TAB='antraege'; render(); toast(st==='genehmigt' ? `${ABS[type].label} eingetragen ✓` : `${ABS[type].label} eingetragen – wartet auf Bestätigung`);
     };
+    draw();
   });
 }
 /* ============ Urlaubsantrag per E-Mail ============ */
@@ -1149,7 +1181,7 @@ function vacMailBody(rs, o){
   const name = (s.name||'').trim() || (s.fullName||'').trim();
   const parts = rs.map(r => r.half ? `am ${wdm(r.from)} einen halben Tag` : r.from===r.to ? `am ${wdm(r.from)}` : `vom ${wdm(r.from)} bis ${wdm(r.to)}`);
   const list = parts.length > 1 ? parts.slice(0,-1).join(', ') + ' und ' + parts[parts.length-1] : parts[0];
-  let line = `ich würde gerne ${list} Urlaub nehmen, das wären ${fmtDays(total)} ${total===1?'Tag':'Tage'}.`;
+  let line = `ich würde gerne ${list} Urlaub nehmen, ${total===1?'also 1 Tag':`das wären ${fmtDays(total)} Tage`}.`;
   if (o.rest){ const v = vacation(+rs[0].from.slice(0,4)); line += ` Danach hätte ich noch ${fmtDays(v.rest - total)} Tage übrig.`; }
   if (o.vertretung) line += ` ${o.vertretung} übernimmt in der Zeit für mich.`;
   line += ' Passt das bei euch?';
@@ -1574,13 +1606,13 @@ function bindView(){
     const k = c.dataset.cal; const a = ABSMAP[k];
     if (a){ const r = S.requests.find(x=>x.id===a.id); toast(`${ABS[a.type].label} · ${r?r.status:''}`); return; }
     if (!isWorkday(k)){ toast(holidayOf(k) || 'Kein Arbeitstag'); return; }
-    if (k < todayKey()){ requestEditor({from:k,to:k}); return; }
+    if (k < todayKey()){ requestEditor({from:k, type:'k'}); return; }
     const cur = VSEL[k]; if (!cur) VSEL[k] = 1; else if (cur === 1) VSEL[k] = .5; else delete VSEL[k];
     render();
   });
   $('#selClear', v) && ($('#selClear', v).onclick = () => { VSEL = {}; render(); });
   $('#selMail', v) && ($('#selMail', v).onclick = () => vacationMail());
-  $('#newReq', v) && ($('#newReq', v).onclick = () => requestEditor());
+  $('#newReq', v) && ($('#newReq', v).onclick = () => requestEditor({type:'k'}));
   $$('[data-approve]', v).forEach(b => b.onclick = () => setReq(b.dataset.approve, 'genehmigt'));
   $$('[data-reject]', v).forEach(b => b.onclick = () => setReq(b.dataset.reject, 'abgelehnt'));
   $$('[data-storno]', v).forEach(b => b.onclick = async () => { const ok = await dialog('Antrag stornieren?', 'Die Abwesenheit wird wieder aus dem Kalender entfernt.', [{label:'Nein'},{label:'Stornieren', danger:true, value:true}]); if (ok) setReq(b.dataset.storno, 'storniert'); });
