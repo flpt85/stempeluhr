@@ -383,6 +383,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
 "use strict";
 /* ============ Grundlagen ============ */
 const KEY = 'stempeluhr.v2';
+const APP_VERSION = '2.2 · 04.11.2026';
 const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -1112,7 +1113,7 @@ function viewMehr(){
     ${mi('data','i-db','Daten & Export','Sicherung, Demo-Daten, Zurücksetzen')}
   </div>
   ${installEvt?`<button class="btn primary block" id="installBtn" style="margin-top:14px;padding:14px">${svg('i-hand')} Als App installieren</button>`:''}
-  <p class="tiny muted" style="margin:18px 4px;text-align:center">Stempeluhr · Persönlicher Prototyp<br>Alle Daten bleiben ausschließlich auf diesem Gerät.${memoryOnly?'<br><b class="neg">Achtung: Speicher nicht verfügbar – Daten gehen beim Schließen verloren.</b>':''}</p>`;
+  <p class="tiny muted" style="margin:18px 4px;text-align:center">Stempeluhr · Version ${APP_VERSION}<br>Alle Daten bleiben ausschließlich auf diesem Gerät.${memoryOnly?'<br><b class="neg">Achtung: Speicher nicht verfügbar – Daten gehen beim Schließen verloren.</b>':''}</p>`;
 }
 function nfcSheet(){
   const chips = S.settings.chips;
@@ -1357,7 +1358,12 @@ try { navigator.storage && navigator.storage.persist && navigator.storage.persis
 })();
 // Chip-Leser automatisch starten, wenn bereits erlaubt
 if (NFC.supported && navigator.permissions){ navigator.permissions.query({name:'nfc'}).then(r => { if (r.state === 'granted') nfcStart(true); }).catch(()=>{}); }
-if ('serviceWorker' in navigator && location.protocol === 'https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+if ('serviceWorker' in navigator && location.protocol === 'https:'){
+  const hadCtrl = !!navigator.serviceWorker.controller; let reloaded = false;
+  navigator.serviceWorker.register('sw.js', {updateViaCache:'none'}).then(r => { r.update().catch(()=>{}); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(()=>{}); }); }).catch(()=>{});
+  // Neue Version übernommen → einmal neu laden, damit sie sofort sichtbar ist
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (hadCtrl && !reloaded && !document.querySelector('.scrim') && !$('#confirm').classList.contains('show')){ reloaded = true; location.reload(); } });
+}
 </script>
 </body>
 </html>
