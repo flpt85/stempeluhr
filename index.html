@@ -383,7 +383,7 @@ code.url{display:block;background:var(--surface-2);border:1px solid var(--line);
 "use strict";
 /* ============ Grundlagen ============ */
 const KEY = 'stempeluhr.v2';
-const APP_VERSION = '2.3 · 04.11.2026';
+const APP_VERSION = '2.4 · 04.11.2026';
 const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
 const WDL = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
 const MON = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
@@ -688,15 +688,22 @@ function dialog(title, text, buttons){
 const NFC = { supported: 'NDEFReader' in window, scanning:false, reader:null, mode:null, learnCb:null };
 async function nfcStart(silent){
   if (!NFC.supported){ if(!silent) toast('NFC geht nur in Chrome auf Android (über https)'); return; }
+  if (!silent && S.settings.nfcOff){ S.settings.nfcOff = false; save(); }
   if (NFC.scanning) return;
   try {
+    NFC.ctrl = new AbortController();
     NFC.reader = new NDEFReader();
-    await NFC.reader.scan();
+    await NFC.reader.scan({signal: NFC.ctrl.signal});
     NFC.scanning = true;
     NFC.reader.onreading = onTag;
     NFC.reader.onreadingerror = () => toast('Chip nicht lesbar – bitte nochmal ranhalten');
     render();
   } catch(e){ if(!silent) toast('NFC: ' + (e.name==='NotAllowedError' ? 'Zugriff nicht erlaubt' : e.message)); }
+}
+function nfcStop(){
+  try { NFC.ctrl && NFC.ctrl.abort(); } catch(_){}
+  NFC.scanning = false; NFC.reader = null; S.settings.nfcOff = true; save(); render();
+  toast('Chip-Leser aus – NFC-Aufkleber mit Link funktionieren trotzdem');
 }
 function onTag(e){
   if (NFC.mode === 'write') return;
@@ -822,8 +829,8 @@ function viewBuchen(){
   const wSum = [0,1,2,3,4,5,6].reduce((a,i)=>{ const dd = calcDay(addDays(mon,i)); a.ist+=dd.ist; a.soll+=dd.soll; return a; },{ist:0,soll:0});
   const hol = holidayOf(k);
   const nfcRow = NFC.supported
-    ? (NFC.scanning ? `<div class="t-nfc"><div class="pulse"></div><span>Chip-Leser aktiv – Chip ans Handy halten</span></div>`
-                    : `<div class="t-nfc">${svg('i-nfc')}<span>Chip-Leser ist aus</span><button id="nfcOn">Aktivieren</button></div>`)
+    ? (NFC.scanning ? `<div class="t-nfc"><div class="pulse"></div><span>Chip-Leser aktiv – Chip ans Handy halten</span><button id="nfcOff">Aus</button></div>`
+                    : `<div class="t-nfc">${svg('i-nfc')}<span>Chip-Leser ist aus</span><button id="nfcOn">Einschalten</button></div>`)
     : `<div class="t-nfc">${svg('i-nfc')}<span>NFC-Aufkleber stempelt auch, wenn die App zu ist</span></div>`;
   return `
   <section class="terminal">
@@ -1319,6 +1326,7 @@ function bindView(){
   $$('[data-info]', v).forEach(b => b.onclick = infoSheet);
   $$('[data-open-day]', v).forEach(b => b.onclick = () => dayEditor(b.dataset.openDay));
   $('#nfcOn', v) && ($('#nfcOn', v).onclick = () => nfcStart());
+  $('#nfcOff', v) && ($('#nfcOff', v).onclick = nfcStop);
   $$('[data-jm]', v).forEach(b => b.onclick = () => { JM.m += +b.dataset.jm; if (JM.m<0){JM.m=11;JM.y--;} if (JM.m>11){JM.m=0;JM.y++;} render(); });
   $$('[data-cm]', v).forEach(b => b.onclick = () => { CM.m += +b.dataset.cm; if (CM.m<0){CM.m=11;CM.y--;} if (CM.m>11){CM.m=0;CM.y++;} render(); });
   $$('[data-cal]', v).forEach(c => c.onclick = () => { const k = c.dataset.cal; const a = ABSMAP[k]; if (a){ const r = S.requests.find(x=>x.id===a.id); toast(`${ABS[a.type].label} · ${r?r.status:''}`); } else if (isWorkday(k)) requestEditor({from:k,to:k}); else toast(holidayOf(k) || 'Kein Arbeitstag'); });
@@ -1359,7 +1367,7 @@ try { navigator.storage && navigator.storage.persist && navigator.storage.persis
   if (st) setTimeout(() => book(st==='kommen'?'in':st==='gehen'?'out':'auto', 'nfc'), 150);
 })();
 // Chip-Leser automatisch starten, wenn bereits erlaubt
-if (NFC.supported && navigator.permissions){ navigator.permissions.query({name:'nfc'}).then(r => { if (r.state === 'granted') nfcStart(true); }).catch(()=>{}); }
+if (NFC.supported && navigator.permissions){ navigator.permissions.query({name:'nfc'}).then(r => { if (r.state === 'granted' && !S.settings.nfcOff) nfcStart(true); }).catch(()=>{}); }
 if ('serviceWorker' in navigator && location.protocol === 'https:'){
   const hadCtrl = !!navigator.serviceWorker.controller; let reloaded = false;
   navigator.serviceWorker.register('sw.js', {updateViaCache:'none'}).then(r => { r.update().catch(()=>{}); document.addEventListener('visibilitychange', () => { if (!document.hidden) r.update().catch(()=>{}); }); }).catch(()=>{});
