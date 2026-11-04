@@ -841,7 +841,9 @@ function viewBuchen(){
   <h2 class="section">Heute</h2>
   <div class="card">
     <div class="between"><div><div class="stat-label">Arbeitszeit</div><div class="big-num num">${dur(d.net)} <span class="muted" style="font-size:16px;font-weight:500">/ ${dur(d.soll)}</span></div></div>
-      <div style="text-align:right"><div class="stat-label">Tagessaldo</div><div class="num ${sCls(d.diff)}" style="font-size:20px;font-weight:600">${dur(d.diff,true)}</div></div></div>
+      <div style="text-align:right">${(d.st==='out' && d.list.length) || d.abs || d.diff > 0 || !d.soll
+        ? `<div class="stat-label">Tagessaldo</div><div class="num ${sCls(d.diff)}" style="font-size:20px;font-weight:600">${dur(d.diff,true)}</div>`
+        : `<div class="stat-label">Noch offen</div><div class="num" style="font-size:20px;font-weight:600;color:var(--ink-2)">${dur(d.soll - d.net)}</div>`}</div></div>
     <div class="progress"><div style="width:${pct}%"></div></div>
     <div class="row small muted" style="gap:14px;flex-wrap:wrap"><span>Brutto ${dur(d.gross)}</span><span>Pause ${dur(d.gaps + d.ded)}${d.ded?` <span class="tiny">(davon ${d.ded} Min. Pflichtabzug)</span>`:''}</span>${d.dgMin?`<span>Dienstgang ${dur(d.dgMin)}</span>`:''}${d.abs?`<span class="badge ${d.abs}">${ABS[d.abs].label}</span>`:''}</div>
     ${tl}
